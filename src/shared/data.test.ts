@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { toSnapshot, type Rows } from './snapshot'
+import { normalizeSnapshot, toSnapshot, type Rows } from './snapshot'
 import { RevokedError, SyncEngine } from './sync'
 import { localStorageStore, memoryStore, pickStore } from './cache'
 import { fixtureSnapshot } from './fixtures'
 
 const rows = (): Rows => ({
-  household: { name: 'Home', timezone: 'Asia/Kolkata', settings: { city: 'Pune', lat: 18.5, lon: 73.8 } },
+  household: { id: 'hh1', name: 'Home', timezone: 'Asia/Kolkata', settings: { city: 'Pune', lat: 18.5, lon: 73.8, hiddenReflections: ['m3', 7] } },
   members: [{ user_id: 'u1', role: 'member', display_name: 'A' }, { user_id: 'tv', role: 'display', display_name: 'TV' }],
   events: [{ id: 'e', title: 'Dinner', starts_at: '2026-10-01T20:00:00Z', all_day: false }],
   tasks: [{ id: 't', title: 'Plants', owner: 'u1', kind: 'task', done: false }],
   notes: [], dreams: [{ id: 'd', title: 'Sea', why: '', affirmation: '', next_step: 'Look', target_date: null, art: 'nonsense' }], ideas: [],
   watch_entries: [{ id: 'w', title: 'Film', type: 'movie', runtime_min: null, service: null, mood: null, summary: null, watched: false, providers: {}, providers_updated_at: null }],
   watch_prefs: [{ entry_id: 'w', user_id: 'u1', pref: 'want' }],
+  quotes: [{ id: 'q1', slot: 'morning', body: 'Ours', author: null, source: null, favorite: true }],
+  weekly: [{ day: '2026-09-28', payload: { eventId: 'e', stepTitle: 'Call them' } }],
 })
 
 test('toSnapshot maps rows, excludes displays from people, tolerates bad art and missing settings', () => {
@@ -21,7 +23,11 @@ test('toSnapshot maps rows, excludes displays from people, tolerates bad art and
   expect(s.dreams[0].art).toBe('sun')
   expect(s.watch[0].prefs).toEqual({ u1: 'want' })
   expect(s.watch[0].entry.runtimeMin).toBeNull()
-  expect(toSnapshot({ ...rows(), household: { name: 'x', timezone: 'UTC', settings: {} } }).household.city).toBeUndefined()
+  expect(s.household.id).toBe('hh1')
+  expect(s.household.hiddenReflections).toEqual(['m3']) // non-strings dropped
+  expect(s.quotes[0]).toMatchObject({ id: 'q1', text: 'Ours', favorite: true })
+  expect(s.weekly).toMatchObject({ day: '2026-09-28', eventId: 'e', stepTitle: 'Call them' })
+  expect(toSnapshot({ ...rows(), household: { id: 'x', name: 'x', timezone: 'UTC', settings: {} } }).household.city).toBeUndefined()
 })
 
 beforeEach(() => { vi.useFakeTimers() })
@@ -65,4 +71,16 @@ test('cache: memory and localStorage round trip and clear; pickStore falls throu
   const l = localStorageStore(); await l.set(snap); expect((await l.get())?.tasks.length).toBe(5); await l.clear(); expect(await l.get()).toBeNull()
   const broken = () => ({ ...memoryStore(), name: 'broken', get: async () => { throw new Error('no idb') } })
   expect((await pickStore([broken, localStorageStore])).name).toBe('localStorage')
+})
+
+test('an old cached snapshot (before prefs/quotes/id existed) is upgraded, not fatal', () => {
+  const old = { household: { name: 'Old', tz: 'Asia/Kolkata', people: [{ id: 'u', name: 'A' }], pinnedApps: [] }, events: [], tasks: [{ id: 't', title: 'x', owner: 'both', kind: 'task', done: false }], syncedAt: 5 }
+  const n = normalizeSnapshot(old)!
+  expect(n.household.prefs.morning).toEqual([300, 660])
+  expect(n.household.id).toBe('')
+  expect(n.household.hiddenReflections).toEqual([])
+  expect(n.quotes).toEqual([]); expect(n.dreams).toEqual([]); expect(n.tasks.length).toBe(1); expect(n.syncedAt).toBe(5)
+})
+test('garbage cache values normalize to null', () => {
+  for (const bad of [null, undefined, 'x', 5, {}, { household: 3 }]) expect(normalizeSnapshot(bad)).toBeNull()
 })

@@ -1,5 +1,7 @@
 import type { Pref, WatchEntry } from './picker'
 import { DEFAULT_PREFS, type TvPrefs } from './prefs'
+import type { Reflection } from './reflections'
+import type { WeeklyPayload } from './week'
 
 export interface Person { id: string; name: string }
 export interface PinnedApp { id: string; label: string; verified: boolean }
@@ -11,13 +13,14 @@ export interface Idea { id: string; title: string; note: string; status: 'new' |
 export interface WatchItem { entry: WatchEntry & { summary?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
 
 export interface Snapshot {
-  household: { name: string; tz: string; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[]; prefs: TvPrefs }
+  household: { id: string; name: string; tz: string; hiddenReflections: string[]; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[]; prefs: TvPrefs }
   events: EventItem[]; tasks: TaskItem[]; dreams: Dream[]; notes: NoteItem[]; ideas: Idea[]; watch: WatchItem[]
+  quotes: Reflection[]; weekly?: { day: string } & WeeklyPayload
   syncedAt: number
 }
 export const emptySnapshot = (tz = 'Asia/Kolkata'): Snapshot => ({
-  household: { name: 'Our Home', tz, people: [], pinnedApps: [], prefs: DEFAULT_PREFS },
-  events: [], tasks: [], dreams: [], notes: [], ideas: [], watch: [], syncedAt: Date.now(),
+  household: { id: '', name: 'Our Home', tz, hiddenReflections: [], people: [], pinnedApps: [], prefs: DEFAULT_PREFS },
+  events: [], tasks: [], dreams: [], notes: [], ideas: [], watch: [], quotes: [], syncedAt: Date.now(),
 })
 
 // Shown until the household pins its own. IDs are unverified until the on-TV gate.

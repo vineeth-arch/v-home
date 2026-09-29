@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getClient } from '../shared/supabase'
-import { toSnapshot, type Rows } from '../shared/snapshot'
+import { normalizeSnapshot, toSnapshot, type Rows } from '../shared/snapshot'
 import { RevokedError, SyncEngine } from '../shared/sync'
 import { pickStore, type CacheStore } from '../shared/cache'
 import type { Snapshot } from '../shared/model'
@@ -17,8 +17,8 @@ const q = async <T,>(p: PromiseLike<{ data: T | null; error: { message: string }
 }
 
 async function fetchRows(c: SupabaseClient, hh: string): Promise<Rows> {
-  const [household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs] = await Promise.all([
-    q(c.from('households').select('name,timezone,settings').eq('id', hh).single()),
+  const [household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly] = await Promise.all([
+    q(c.from('households').select('id,name,timezone,settings').eq('id', hh).single()),
     q(c.from('members').select('user_id,role,display_name').eq('household_id', hh)),
     q(c.from('events').select('id,title,starts_at,all_day').order('starts_at')),
     q(c.from('tasks').select('id,title,owner,kind,done').order('created_at')),
@@ -27,8 +27,10 @@ async function fetchRows(c: SupabaseClient, hh: string): Promise<Rows> {
     q(c.from('ideas').select('id,title,note,status,author_id,pinned').order('created_at', { ascending: false })),
     q(c.from('watch_entries').select('id,title,type,runtime_min,service,mood,summary,watched,providers,providers_updated_at')),
     q(c.from('watch_prefs').select('entry_id,user_id,pref')),
+    q(c.from('quotes').select('id,slot,body,author,source,favorite').eq('hidden', false)),
+    q(c.from('ritual_selections').select('day,payload').eq('slot', 'weekly').order('day', { ascending: false }).limit(1)),
   ])
-  return { household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs } as unknown as Rows
+  return { household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly } as unknown as Rows
 }
 
 /** TV lifecycle: anonymous session, pairing, cached-first render, versioned sync, revoke handling. */
@@ -66,7 +68,7 @@ export function useLive(enabled: boolean): Live {
     }
     hhRef.current = hh
     setCode(null)
-    const cached = await store.get().catch(() => null)
+    const cached = normalizeSnapshot(await store.get().catch(() => null))
     if (cached) setSnapshot(cached)
     setStatus('ready')
     const engine = new SyncEngine({

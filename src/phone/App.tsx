@@ -6,6 +6,9 @@ import { supabaseConfigured } from '../shared/supabase'
 import { buildExport, previewCounts, remapImport, TABLES, type ExportFile } from '../shared/exportImport'
 import type { PinnedApp } from '../shared/model'
 import { LaunchStrip, TvLayout } from './TvLayout'
+import { Reflections } from './Reflections'
+import { Weekly } from './Weekly'
+import { ideaToDream, ideaToTask } from '../shared/convert'
 
 const qs = new URLSearchParams(location.search)
 const errMsg = (x: unknown) => (x instanceof Error ? x.message : String(x))
@@ -46,6 +49,22 @@ function Watch({ hh, me, people }: { hh: string; me: string; people: { id: strin
       })}
       <span className="dim">{people.filter((x) => x.id !== me).map((x) => `${x.name}: ${prefs.find((q) => q.entry_id === r.id && q.user_id === x.id)?.pref ?? 'no vote'}`).join(' · ')}</span>
     </div>)} />
+}
+
+function Ideas({ hh, me }: { hh: string; me: string }) {
+  const [n, setN] = useState(0); const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const make = async (r: Row, kind: 'task' | 'dream') => {
+    setMsg(null)
+    try {
+      const idea = { title: String(r.title), note: String(r.note ?? '') }
+      await saveRow(kind === 'task' ? 'tasks' : 'dreams', hh, null, kind === 'task' ? ideaToTask(idea) : ideaToDream(idea))
+      const u = await saveRow('ideas', hh, r, { status: 'planned' })
+      setMsg('conflict' in u ? { ok: false, text: `Created the ${kind}, but the idea changed elsewhere. Open it to review.` } : { ok: true, text: `Created a ${kind}. The idea is now planned.` })
+    } catch (x) { setMsg({ ok: false, text: errMsg(x) }) }
+    setN(n + 1)
+  }
+  return <div>{msg && <div className={msg.ok ? 'ok' : 'err'}>{msg.text}</div>}
+    <Crud key={n} e={ENTITIES.ideas} hh={hh} me={me} decorate={(r: Row) => r.status === 'archived' ? null : <div className="row" style={{ marginBottom: 6 }}><button className="pbtn" onClick={() => void make(r, 'task')}>Make task</button><button className="pbtn" onClick={() => void make(r, 'dream')}>Make dream</button></div>} /></div>
 }
 
 function Displays({ hh }: { hh: string }) {
@@ -97,7 +116,7 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
     <h2>Account</h2><div className="dim">{me.email}</div><div className="row" style={{ marginTop: 8 }}><button className="pbtn" onClick={async () => { await signOut(); onSignOut() }}>Sign out</button></div></div>
 }
 
-const TABS = ['events', 'tasks', 'dreams', 'notes', 'ideas', 'watch', 'displays', 'settings'] as const
+const TABS = ['events', 'tasks', 'dreams', 'notes', 'ideas', 'weekly', 'reflections', 'watch', 'displays', 'settings'] as const
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); const [tab, setTab] = useState<(typeof TABS)[number]>(qs.get('code') ? 'displays' : 'events')
   const [people, setPeople] = useState<{ id: string; name: string }[]>([])
@@ -114,7 +133,10 @@ export function App() {
     {tab === 'settings' ? <Settings hh={hh} me={me} onSignOut={() => setMe(null)} />
       : tab === 'displays' ? <Displays hh={hh} />
         : tab === 'watch' ? <Watch hh={hh} me={me.userId} people={people} />
-          : <Crud key={tab} e={ENTITIES[tab]} hh={hh} me={me.userId} extraOptions={ownerOpts} />}
+          : tab === 'weekly' ? <Weekly hh={hh} />
+            : tab === 'reflections' ? <Reflections hh={hh} me={me.userId} />
+              : tab === 'ideas' ? <Ideas hh={hh} me={me.userId} />
+                : <Crud key={tab} e={ENTITIES[tab]} hh={hh} me={me.userId} extraOptions={ownerOpts} />}
   </div>
-    <nav className="tabs">{TABS.map((t) => <button key={t} className={`pbtn ${tab === t ? 'cur' : ''}`} onClick={() => setTab(t)}>{ENTITIES[t]?.plural ?? (t === 'watch' ? 'Watch' : t[0].toUpperCase() + t.slice(1))}</button>)}</nav></>
+    <nav className="tabs">{TABS.map((t) => <button key={t} className={`pbtn ${tab === t ? 'cur' : ''}`} onClick={() => setTab(t)}>{t === 'weekly' ? 'This week' : ENTITIES[t]?.plural ?? (t === 'watch' ? 'Watch' : t[0].toUpperCase() + t.slice(1))}</button>)}</nav></>
 }

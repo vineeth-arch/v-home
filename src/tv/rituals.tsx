@@ -28,7 +28,7 @@ function Flow({ scope, cards, onClose, start = 0 }: { scope: string; cards: { st
 export function MorningRitual({ onClose, startAt = 0 }: { onClose: () => void; startAt?: number }) {
   const { snap, now, tz } = useApp()
   const dream = snap.dreams[0]
-  const r = pickDaily(snap.household.name, localDate(now, tz), 'morning')
+  const r = pickDaily(snap.household.id || snap.household.name, localDate(now, tz), 'morning', snap.household.hiddenReflections, snap.quotes)
   const [step, setStep] = useState<string | null>(null)
   const [who, setWho] = useState<string>('both')
   const whos = ['both', ...snap.household.people.map((p) => p.id)]
@@ -48,7 +48,7 @@ export function MorningRitual({ onClose, startAt = 0 }: { onClose: () => void; s
 export function BedtimeRitual({ onClose }: { onClose: () => void }) {
   const { snap, now, tz } = useApp()
   const dream = snap.dreams[0]
-  const r = pickDaily(snap.household.name, localDate(now, tz), 'evening')
+  const r = pickDaily(snap.household.id || snap.household.name, localDate(now, tz), 'evening', snap.household.hiddenReflections, snap.quotes)
   const { msg, run } = useTimerActions()
   const [off, setOff] = useState(false)
   return <>

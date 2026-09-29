@@ -1,5 +1,5 @@
 begin;
-select plan(41);
+select plan(43);
 
 -- identities -------------------------------------------------------------
 insert into auth.users (id, aud, role, email, is_anonymous) values
@@ -125,6 +125,12 @@ select pg_temp.act_as('00000000-0000-0000-0000-00000000a11c');
 select lives_ok(format($$select public.revoke_display(%L, '00000000-0000-0000-0000-000000007001')$$, current_setting('t.hh1')), 'alice revokes the TV');
 select pg_temp.act_as('00000000-0000-0000-0000-000000007001', true);
 select is((select count(*) from public.events)::int, 0, 'revoked TV sees nothing');
+
+-- weekly check-in: a second selection for the same household/day/slot is rejected
+select pg_temp.act_as('00000000-0000-0000-0000-00000000a11c');
+insert into public.ritual_selections (household_id, day, slot) values (current_setting('t.hh1')::uuid, '2026-09-28', 'weekly');
+select throws_ok(format($$insert into public.ritual_selections (household_id, day, slot) values (%L, '2026-09-28', 'weekly')$$, current_setting('t.hh1')), '23505', null, 'duplicate weekly selection rejected');
+select lives_ok(format($$insert into public.ritual_selections (household_id, day, slot) values (%L, '2026-09-29', 'weekly')$$, current_setting('t.hh1')), 'different day is fine');
 
 -- a TV can unpair itself (fresh pairing first)
 reset role;

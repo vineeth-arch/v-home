@@ -1,15 +1,17 @@
 // Labelled sample data. Used only by the simulation data source (never shipped as household content).
 import type { Snapshot } from './model'
 import { DEFAULT_PREFS } from './prefs'
+import { localDate } from './daily'
 
 const day = (offset: number, hhmm: string) => {
-  const d = new Date(); d.setDate(d.getDate() + offset)
-  return `${d.toISOString().slice(0, 10)}T${hhmm}:00+05:30`
+  // date in the household timezone (IST): using the UTC date shifts "tomorrow" between 00:00 and 05:30 IST
+  const d = new Date(Date.now() + offset * 864e5)
+  return `${localDate(d, 'Asia/Kolkata')}T${hhmm}:00+05:30`
 }
 
 export const fixtureSnapshot = (): Snapshot => ({
   household: {
-    name: 'Our Home', tz: 'Asia/Kolkata', city: 'Sample City', prefs: DEFAULT_PREFS,
+    id: 'sim-household', name: 'Our Home', tz: 'Asia/Kolkata', city: 'Sample City', prefs: DEFAULT_PREFS, hiddenReflections: [],
     people: [{ id: 'p1', name: 'Vineeth' }, { id: 'p2', name: 'Partner' }],
     pinnedApps: [
       { id: 'netflix', label: 'Netflix', verified: false }, { id: 'youtube.leanback.v4', label: 'YouTube', verified: false },
@@ -55,6 +57,7 @@ export const fixtureSnapshot = (): Snapshot => ({
     { entry: { id: 'w4', title: 'Hills of Home', type: 'movie', runtimeMin: null, service: 'YouTube', mood: 'calm', summary: 'A documentary about mountain villages.' }, prefs: { p1: 'want', p2: 'maybe' } },
     { entry: { id: 'w5', title: 'Sunday Table', type: 'series', runtimeMin: 30, service: 'Netflix', mood: 'light', summary: 'Short episodes about cooking together.' }, prefs: { p1: 'want', p2: 'want' } },
   ],
+  quotes: [],
   syncedAt: Date.now(),
 })
 

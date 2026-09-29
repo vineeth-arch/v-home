@@ -1,7 +1,7 @@
 import type { Snapshot } from './model'
 
 export interface CacheStore { name: string; get(): Promise<Snapshot | null>; set(s: Snapshot): Promise<void>; clear(): Promise<void> }
-const KEY = 'vhome.snapshot.v1'
+const KEY = 'vhome.snapshot.v2' // bumped when the snapshot shape grew; older caches are simply ignored
 
 export const memoryStore = (): CacheStore => {
   let v: Snapshot | null = null

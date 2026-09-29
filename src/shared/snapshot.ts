@@ -1,9 +1,12 @@
 import type { Dream, EventItem, Idea, NoteItem, Snapshot, TaskItem, WatchItem } from './model'
 import { resolvePrefs } from './prefs'
+import type { WeeklyPayload } from './week'
 
 /** Raw rows as returned by the TV-scoped selects. Column names match the DB. */
 export interface Rows {
-  household: { name: string; timezone: string; settings: Record<string, unknown> }
+  household: { id: string; name: string; timezone: string; settings: Record<string, unknown> }
+  quotes: { id: string; slot: 'morning' | 'evening'; body: string; author: string | null; source: string | null; favorite: boolean }[]
+  weekly: { day: string; payload: Record<string, unknown> }[]
   members: { user_id: string; role: string; display_name: string }[]
   events: { id: string; title: string; starts_at: string; all_day: boolean }[]
   tasks: { id: string; title: string; owner: string; kind: 'task' | 'grocery'; done: boolean }[]
@@ -24,7 +27,8 @@ export function toSnapshot(r: Rows, now = Date.now()): Snapshot {
   for (const p of r.watch_prefs) prefsBy.set(p.entry_id, { ...(prefsBy.get(p.entry_id) ?? {}), [p.user_id]: p.pref })
   return {
     household: {
-      name: r.household.name, tz: r.household.timezone,
+      id: r.household.id, name: r.household.name, tz: r.household.timezone,
+      hiddenReflections: Array.isArray(st.hiddenReflections) ? (st.hiddenReflections as string[]).filter((x) => typeof x === 'string') : [],
       people: r.members.filter((m) => m.role === 'member').map((m) => ({ id: m.user_id, name: m.display_name })),
       city: typeof st.city === 'string' ? st.city : undefined, lat: num(st.lat), lon: num(st.lon),
       region: typeof st.region === 'string' ? st.region : undefined,
@@ -40,6 +44,29 @@ export function toSnapshot(r: Rows, now = Date.now()): Snapshot {
       entry: { id: w.id, title: w.title, type: w.type, runtimeMin: w.runtime_min, service: w.service ?? undefined, mood: w.mood ?? undefined, summary: w.summary ?? undefined, watched: w.watched, providers: w.providers, providersUpdatedAt: w.providers_updated_at ?? undefined },
       prefs: prefsBy.get(w.id) ?? {},
     })),
+    quotes: r.quotes.map((q) => ({ id: q.id, slot: q.slot, text: q.body, author: q.author ?? undefined, source: q.source ?? undefined, favorite: q.favorite })),
+    weekly: r.weekly[0] ? { day: r.weekly[0].day, ...(r.weekly[0].payload as WeeklyPayload) } : undefined,
     syncedAt: now,
+  }
+}
+
+/**
+ * A cached snapshot may come from an older app version (missing newer fields). Fill defaults so a new build never
+ * crashes on old cached data; return null when it isn't a snapshot at all (caller then just waits for the network).
+ */
+export function normalizeSnapshot(raw: unknown): Snapshot | null {
+  if (!raw || typeof raw !== 'object') return null
+  const s = raw as Partial<Snapshot>
+  if (!s.household || typeof s.household !== 'object') return null
+  const arr = <T,>(v: T[] | undefined) => (Array.isArray(v) ? v : [])
+  const h = s.household as Partial<Snapshot['household']>
+  return {
+    household: {
+      id: h.id ?? '', name: h.name ?? 'Our Home', tz: h.tz ?? 'Asia/Kolkata', hiddenReflections: arr(h.hiddenReflections),
+      people: arr(h.people), city: h.city, lat: h.lat, lon: h.lon, region: h.region, pinnedApps: arr(h.pinnedApps),
+      prefs: resolvePrefs(h.prefs, arr(s.dreams)),
+    },
+    events: arr(s.events), tasks: arr(s.tasks), dreams: arr(s.dreams), notes: arr(s.notes), ideas: arr(s.ideas), watch: arr(s.watch),
+    quotes: arr(s.quotes), weekly: s.weekly, syncedAt: typeof s.syncedAt === 'number' ? s.syncedAt : Date.now(),
   }
 }

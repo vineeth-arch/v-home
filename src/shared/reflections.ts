@@ -1,6 +1,6 @@
 import { fnv1a } from './daily'
 
-export interface Reflection { id: string; slot: 'morning' | 'evening'; text: string; author?: string; source?: string }
+export interface Reflection { id: string; slot: 'morning' | 'evening'; text: string; author?: string; source?: string; favorite?: boolean }
 
 const M = [
   'We are building a life that feels peaceful, connected, and ours.',
@@ -52,9 +52,19 @@ export const BUNDLED: Reflection[] = [
   ...E.map((text, i) => ({ id: `e${i + 1}`, slot: 'evening' as const, text })),
 ]
 
-/** One stable item per household-local date per slot. Hidden ids are skipped. Custom items join the pool. */
-export function pickDaily(householdId: string, date: string, slot: 'morning' | 'evening', hidden: string[] = [], custom: Reflection[] = []): Reflection | null {
-  const pool = [...BUNDLED, ...custom].filter((r) => r.slot === slot && !hidden.includes(r.id))
-  if (!pool.length) return null
-  return pool[fnv1a(`${householdId}|${date}|${slot}`) % pool.length]
+/**
+ * One stable item per household-local date per slot. Hidden ids are skipped, custom items join the pool,
+ * favourites count double. `offset` is the in-session "Next" (not saved), so the day's pick stays stable.
+ */
+export function pickDaily(householdId: string, date: string, slot: 'morning' | 'evening', hidden: string[] = [], custom: Reflection[] = [], offset = 0): Reflection | null {
+  const base = [...BUNDLED, ...custom].filter((r) => r.slot === slot && !hidden.includes(r.id))
+  if (!base.length) return null
+  // favourites appear twice in the pool; "Next" walks distinct items in pool order
+  const pool = base.flatMap((r) => (r.favorite ? [r, r] : [r]))
+  const start = fnv1a(`${householdId}|${date}|${slot}`) % pool.length
+  for (let k = 0; k < pool.length; k++) {
+    const r = pool[(start + Math.max(0, offset) + k) % pool.length]
+    if (offset === 0 || k === 0) return r
+  }
+  return pool[start]
 }
