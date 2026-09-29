@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Btn, DreamArt, fmtDay, fmtTime } from './ui'
+import { Btn, DreamPic, fmtDay, fmtTime } from './ui'
 import { useLayer } from './FocusProvider'
 import { useApp, personName, type Screen } from './state'
 import { pickDaily } from '../shared/reflections'
@@ -72,7 +72,7 @@ export function OurHome() {
   return <>
     <div className="main" data-cards={prefs.showToday || prefs.showForUs ? undefined : 'none'}>
       <div className="hero">
-        <DreamArt kind={dream?.art ?? 'sun'} />
+        <DreamPic imagePath={dream?.imagePath} kind={dream?.art ?? 'sun'} />
         <div className="scrim">
           <p className="quote">{quote || 'Welcome home.'}</p>
           <div className="cap">{cap}</div>
@@ -184,7 +184,7 @@ export function Us() {
           <span className="box">{t.done ? '✓' : ''}</span><span className="lbl">{t.title}</span><span className="dim small" style={{ marginLeft: 'auto' }}>{t.kind === 'grocery' ? 'Grocery · ' : ''}{personName(snap, t.owner)}</span>
         </Btn>))}
       {tab === 'Our Dreams' && <div className="grid3" style={{ gridTemplateColumns: '1fr 1fr' }}>{snap.dreams.map((d) => (
-        <div key={d.id} className="card" style={{ padding: 0, overflow: 'hidden' }}><div style={{ height: 200 }}><DreamArt kind={d.art} /></div>
+        <div key={d.id} className="card" style={{ padding: 0, overflow: 'hidden' }}><div style={{ height: 200 }}><DreamPic imagePath={d.imagePath} kind={d.art} /></div>
           <div style={{ padding: '18px 26px' }}><div className="serif" style={{ fontSize: 36 }}>{d.title}</div><div className="dim small">{d.why}</div><div className="small" style={{ marginTop: 8 }}>Next: {d.nextStep}</div></div></div>))}</div>}
       {tab === 'Notes' && snap.notes.map((n) => <div className="card item" key={n.id}><span>“{n.text}”</span><span className="dim small" style={{ marginLeft: 'auto' }}>{personName(snap, n.author)}</span></div>)}
     </div>

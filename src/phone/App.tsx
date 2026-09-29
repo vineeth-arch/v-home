@@ -3,7 +3,8 @@ import { acceptInvite, approvePairing, createHousehold, createInvite, getHouseho
 import { Crud } from './Crud'
 import { ENTITIES } from './entities'
 import { supabaseConfigured } from '../shared/supabase'
-import { buildExport, previewCounts, remapImport, TABLES, type ExportFile } from '../shared/exportImport'
+import { base64ToBlob, blobToBase64, buildExport, previewCounts, remapImport, TABLES, type ExportedPhoto, type ExportFile } from '../shared/exportImport'
+import { downloadPhoto, restorePhoto } from './media'
 import type { PinnedApp } from '../shared/model'
 import { LaunchStrip, MoreApps, TvLayout } from './TvLayout'
 import { sanitizeCustomApps } from '../shared/apps'
@@ -92,10 +93,16 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
   const pinned = (h?.settings.pinnedApps as PinnedApp[] | undefined) ?? []
   const doExport = async () => {
     const rows = Object.fromEntries(await Promise.all(TABLES.map(async (t) => [t, await listRows(t)]))) as never
-    const f = buildExport({ name: h!.name, timezone: h!.timezone, settings: h!.settings }, rows)
+    const media: ExportedPhoto[] = []
+    const mrows = await listRows('media').catch(() => [] as Row[])
+    for (const t of ['dreams', 'ideas'] as const) for (const r of (rows as Record<string, Row[]>)[t]) {
+      const p = r.image_path as string | null; if (!p || media.some((m) => m.path === p)) continue
+      const b = await downloadPhoto(p); if (b) media.push({ path: p, base64: await blobToBase64(b), showOnTv: Boolean(mrows.find((m) => (m as unknown as { path: string }).path === p)?.show_on_tv) })
+    }
+    const f = buildExport({ name: h!.name, timezone: h!.timezone, settings: h!.settings }, rows, new Date(), media)
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(f)], { type: 'application/json' })); a.download = `vhome-export-${new Date().toISOString().slice(0, 10)}.json`; a.click()
   }
-  const doImport = async () => { if (!imp) return; try { const items = remapImport(imp, hh, me.userId); for (const it of items) await saveRow(it.table, hh, null, it.row); setMsg(`Imported ${items.length} items.`); setImp(null) } catch (x) { setMsg(errMsg(x)) } }
+  const doImport = async () => { if (!imp) return; try { const { items, photos } = remapImport(imp, hh, me.userId); for (const p of photos) await restorePhoto(hh, p.newPath, base64ToBlob(p.base64), p.showOnTv); for (const it of items) await saveRow(it.table, hh, null, it.row); setMsg(`Imported ${items.length} items${photos.length ? ` and ${photos.length} photos` : ''}.`); setImp(null) } catch (x) { setMsg(errMsg(x)) } }
   if (!h) return <div className="dim">Loading…</div>
   return <div><h1>Settings</h1>
     <h2>Household</h2><label>Name</label><input defaultValue={h.name} onBlur={(e) => e.target.value !== h.name && void patchSettings({}, { name: e.target.value })} />
@@ -112,7 +119,7 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
     {invite && <div className="item"><span className="sub">Send this once. It works for 7 days and one person.</span><span style={{ wordBreak: 'break-all' }}>{invite}</span></div>}
     <h2>Backup</h2><div className="row"><button className="pbtn" onClick={() => void doExport()}>Export household</button>
       <label className="pbtn" style={{ margin: 0 }}>Import<input type="file" accept="application/json" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (f) try { setImp(JSON.parse(await f.text())) } catch { setMsg('That file is not a V/HOME export.') } }} /></label></div>
-    <div className="dim">Photos are not part of exports yet.</div>
+    <div className="dim">Exports include your photos, so the file can be large.</div>
     {imp && <div className="item"><span>Import into this household?</span><span className="sub">{Object.entries(previewCounts(imp)).map(([k, n]) => `${n} ${k}`).join(', ')}</span><div className="row"><button className="pbtn primary" onClick={() => void doImport()}>Import</button><button className="pbtn" onClick={() => setImp(null)}>Cancel</button></div></div>}
     {msg && <div className={/^(Saved|Imported)/.test(msg) ? 'ok' : 'err'}>{msg}</div>}
     <h2>Account</h2><div className="dim">{me.email}</div><div className="row" style={{ marginTop: 8 }}><button className="pbtn" onClick={async () => { await signOut(); onSignOut() }}>Sign out</button></div></div>

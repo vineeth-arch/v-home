@@ -24,6 +24,7 @@ export interface AppState {
   live: Live | null // null = simulation (fixtures)
   launch(id: string, label: string): Promise<void>
   toast: string | null
+  images: Record<string, string>
 }
 const Ctx = createContext<AppState | null>(null)
 export const useApp = () => useContext(Ctx)!
@@ -115,7 +116,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [isLive, live, snap.tasks])
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, overlay, setOverlay,
-    platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast,
+    platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast, images: isLive ? live.images : {},
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -4,11 +4,30 @@ import { getClient } from '../shared/supabase'
 import { normalizeSnapshot, toSnapshot, type Rows } from '../shared/snapshot'
 import { RevokedError, SyncEngine } from '../shared/sync'
 import { pickStore, type CacheStore } from '../shared/cache'
+import { createImageCache } from '../shared/imageCache'
 import type { Snapshot } from '../shared/model'
 import { backoffDelay, shouldIssueCode } from '../shared/pairing'
 
 export type LiveStatus = 'booting' | 'pairing' | 'ready'
-export interface Live { status: LiveStatus; code: string | null; snapshot: Snapshot | null; offline: boolean; cacheBackend: string; unpair(): Promise<void>; completeTask(id: string): Promise<void>; markWatched(id: string): Promise<void> }
+export interface Live { images: Record<string, string>; status: LiveStatus; code: string | null; snapshot: Snapshot | null; offline: boolean; cacheBackend: string; unpair(): Promise<void>; completeTask(id: string): Promise<void>; markWatched(id: string): Promise<void> }
+
+/** Signed URLs live in memory only (they expire after an hour). Offline or unsigned photos fall back to the cached blob. */
+async function resolveImages(c: SupabaseClient, paths: string[], cache: ReturnType<typeof createImageCache>, made: string[]): Promise<Record<string, string>> {
+  const uniq = [...new Set(paths.filter(Boolean))]
+  const out: Record<string, string> = {}
+  let signed: Record<string, string> = {}
+  try {
+    const r = await c.storage.from('household-media').createSignedUrls(uniq, 3600)
+    for (const x of r.data ?? []) if (x.path && x.signedUrl) signed[x.path] = x.signedUrl
+  } catch { signed = {} }
+  for (const p of uniq) {
+    if (signed[p]) {
+      out[p] = signed[p]
+      void (async () => { if (await cache.get(p)) return; try { const b = await (await fetch(signed[p])).blob(); await cache.put(p, b) } catch { /* fetch can fail on file:// (CORS); the <img> still works */ } })()
+    } else { const b = await cache.get(p); if (b) { const u = URL.createObjectURL(b); made.push(u); out[p] = u } }
+  }
+  return out
+}
 
 const q = async <T,>(p: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> => {
   const { data, error } = await p
@@ -23,8 +42,8 @@ async function fetchRows(c: SupabaseClient, hh: string): Promise<Rows> {
     q(c.from('events').select('id,title,starts_at,all_day').order('starts_at')),
     q(c.from('tasks').select('id,title,owner,kind,done').order('created_at')),
     q(c.from('notes').select('id,body,author_id').order('created_at', { ascending: false })),
-    q(c.from('dreams').select('id,title,why,affirmation,next_step,target_date,art').order('created_at')),
-    q(c.from('ideas').select('id,title,note,status,author_id,pinned').order('created_at', { ascending: false })),
+    q(c.from('dreams').select('id,title,why,affirmation,next_step,target_date,art,image_path').order('created_at')),
+    q(c.from('ideas').select('id,title,note,status,author_id,pinned,image_path').order('created_at', { ascending: false })),
     q(c.from('watch_entries').select('id,title,type,runtime_min,service,mood,summary,watched,providers,providers_updated_at')),
     q(c.from('watch_prefs').select('entry_id,user_id,pref')),
     q(c.from('quotes').select('id,slot,body,author,source,favorite').eq('hidden', false)),
@@ -44,6 +63,10 @@ export function useLive(enabled: boolean): Live {
   const engineRef = useRef<SyncEngine | null>(null)
   const storeRef = useRef<CacheStore | null>(null)
   const epoch = useRef(0)
+  const [images, setImages] = useState<Record<string, string>>({})
+  const imgCache = useRef(createImageCache())
+  const objectUrls = useRef<string[]>([])
+  const lastPaths = useRef<string[]>([])
 
   const boot = useCallback(async () => {
     const my = ++epoch.current
@@ -79,16 +102,23 @@ export function useLive(enabled: boolean): Live {
         return Number(data.version)
       },
       fetchSnapshot: async () => toSnapshot(await fetchRows(c, hh!)),
-      onSnapshot: (s) => { setSnapshot(s); setOffline(false); void store.set(s) },
+      onSnapshot: (s) => {
+        setSnapshot(s); setOffline(false); void store.set(s)
+        const paths = [...s.dreams.map((d) => d.imagePath), ...s.ideas.map((i) => i.imagePath)].filter((x): x is string => !!x)
+        lastPaths.current = paths
+        void resolveImages(c, paths, imgCache.current, objectUrls.current).then(setImages)
+      },
       onOffline: () => setOffline(true),
       onRevoked: () => { void store.clear(); setSnapshot(null); run() },
     })
     engineRef.current = engine
     engine.start()
     const ch = c.channel(`hv-${hh}`).on('postgres_changes', { event: '*', schema: 'public', table: 'household_versions', filter: `household_id=eq.${hh}` }, () => engine.nudge()).subscribe()
+    // signed URLs expire after 1h; re-sign well before that so a screen change never shows a dead picture
+    const resign = setInterval(() => { if (lastPaths.current.length) void resolveImages(c, lastPaths.current, imgCache.current, objectUrls.current).then(setImages) }, 45 * 60_000)
     const nudge = () => engine.nudge()
     document.addEventListener('visibilitychange', nudge); addEventListener('online', nudge)
-    const stop = () => { engine.stop(); void c.removeChannel(ch); document.removeEventListener('visibilitychange', nudge); removeEventListener('online', nudge) }
+    const stop = () => { engine.stop(); clearInterval(resign); void c.removeChannel(ch); document.removeEventListener('visibilitychange', nudge); removeEventListener('online', nudge) }
     cleanup.current = stop
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const cleanup = useRef<() => void>(() => {})
@@ -116,10 +146,10 @@ export function useLive(enabled: boolean): Live {
   const unpair = useCallback(async () => {
     const c = getClient()
     cleanup.current(); engineRef.current?.stop()
-    await c.rpc('display_unpair'); await storeRef.current?.clear(); await c.auth.signOut()
+    await c.rpc('display_unpair'); await storeRef.current?.clear(); await imgCache.current.clear(); setImages({}); await c.auth.signOut()
     setSnapshot(null); setStatus('booting'); run()
   }, [run])
   const completeTask = useCallback(async (id: string) => { await getClient().rpc('tv_complete_task', { p_id: id }); engineRef.current?.nudge() }, [])
   const markWatched = useCallback(async (id: string) => { await getClient().rpc('tv_mark_watched', { p_id: id }); engineRef.current?.nudge() }, [])
-  return { status, code, snapshot, offline, cacheBackend, unpair, completeTask, markWatched }
+  return { images, status, code, snapshot, offline, cacheBackend, unpair, completeTask, markWatched }
 }

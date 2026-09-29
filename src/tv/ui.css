@@ -103,3 +103,4 @@
 .main[data-cards='none'] { grid-template-columns: 1fr; }
 .apps-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .app-row { font-size: 36px; padding: 22px 32px; }
+.dream-photo { object-fit: cover; }

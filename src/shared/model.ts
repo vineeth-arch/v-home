@@ -7,9 +7,9 @@ export interface Person { id: string; name: string }
 export interface PinnedApp { id: string; label: string; verified: boolean }
 export interface EventItem { id: string; title: string; at: string; allDay?: boolean }
 export interface TaskItem { id: string; title: string; owner: 'both' | string; kind: 'task' | 'grocery'; done: boolean }
-export interface Dream { id: string; title: string; why: string; affirmation: string; nextStep: string; targetDate?: string; art: 'sun' | 'hills' | 'sea' | 'window' }
+export interface Dream { id: string; title: string; why: string; affirmation: string; nextStep: string; targetDate?: string; art: 'sun' | 'hills' | 'sea' | 'window'; imagePath?: string }
 export interface NoteItem { id: string; text: string; author: string }
-export interface Idea { id: string; title: string; note: string; status: 'new' | 'discuss' | 'planned' | 'archived'; author: string; pinned?: boolean }
+export interface Idea { id: string; title: string; note: string; status: 'new' | 'discuss' | 'planned' | 'archived'; author: string; pinned?: boolean; imagePath?: string }
 export interface WatchItem { entry: WatchEntry & { summary?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
 
 export interface Snapshot {

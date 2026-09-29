@@ -6,6 +6,7 @@ export interface Entity {
   table: string; label: string; plural: string; fields: Field[]
   title: (r: Row) => string; sub?: (r: Row) => string
   tvToggle: boolean // dreams and notes must be explicitly shown on TV
+  photo?: boolean   // dreams and ideas can carry one photo
 }
 
 const S = (v: unknown) => (v == null ? '' : String(v))
@@ -16,13 +17,13 @@ export const ENTITIES: Record<string, Entity> = {
   tasks: { table: 'tasks', label: 'Task', plural: 'Tasks', tvToggle: false,
     fields: [{ key: 'title', label: 'Task or grocery', type: 'text', required: true }, { key: 'kind', label: 'Kind', type: 'select', options: ['task', 'grocery'], defaultValue: 'task' }, { key: 'owner', label: 'Whose', type: 'select', options: ['both'], defaultValue: 'both' }, { key: 'done', label: 'Done', type: 'checkbox' }],
     title: (r) => S(r.title), sub: (r) => `${S(r.kind)}${r.done ? ' · done' : ''}` },
-  dreams: { table: 'dreams', label: 'Dream', plural: 'Dreams', tvToggle: true,
+  dreams: { table: 'dreams', label: 'Dream', plural: 'Dreams', tvToggle: true, photo: true,
     fields: [{ key: 'title', label: 'Dream', type: 'text', required: true }, { key: 'why', label: 'Why it matters', type: 'textarea' }, { key: 'affirmation', label: 'Affirmation', type: 'textarea' }, { key: 'next_step', label: 'Next small step', type: 'text' }, { key: 'target_date', label: 'Target date', type: 'date' }, { key: 'art', label: 'Art style', type: 'select', options: ['sun', 'hills', 'sea', 'window'], defaultValue: 'sun' }],
     title: (r) => S(r.title), sub: (r) => S(r.next_step) },
   notes: { table: 'notes', label: 'Note', plural: 'Notes', tvToggle: true,
     fields: [{ key: 'body', label: 'Note', type: 'textarea', required: true }],
     title: (r) => S(r.body), sub: () => '' },
-  ideas: { table: 'ideas', label: 'Idea', plural: 'Ideas', tvToggle: false,
+  ideas: { table: 'ideas', label: 'Idea', plural: 'Ideas', tvToggle: false, photo: true,
     fields: [{ key: 'title', label: 'Idea', type: 'text', required: true }, { key: 'note', label: 'Note', type: 'textarea' }, { key: 'link', label: 'Link', type: 'text' }, { key: 'status', label: 'Status', type: 'select', options: ['new', 'discuss', 'planned', 'archived'], defaultValue: 'new' }, { key: 'pinned', label: 'Pinned', type: 'checkbox' }],
     title: (r) => S(r.title), sub: (r) => `${S(r.status)}${r.pinned ? ' · pinned' : ''}` },
   quotes: { table: 'quotes', label: 'Reflection', plural: 'Reflections', tvToggle: false,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listRows, removeRow, saveRow, type Row } from './api'
 import { missingRequired, toPayload, type Entity } from './entities'
+import { deletePhoto, setPhotoOnTv, signedUrls, uploadPhoto } from './media'
 
 const draftKey = (t: string, id: string | null) => `vhome.draft.${t}.${id ?? 'new'}`
 const readDraft = (k: string): Record<string, unknown> | null => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : null } catch { return null } }
@@ -21,6 +22,12 @@ function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e:
   const [err, setErr] = useState('')
   const [conflict, setConflict] = useState<Row | null>(null)
   const [busy, setBusy] = useState(false)
+  const oldPath = (row?.image_path as string | null | undefined) ?? null
+  const [file, setFile] = useState<File | null>(null)
+  const [removePhoto, setRemovePhoto] = useState(false)
+  const [preview, setPreview] = useState<string | null>(null)
+  useEffect(() => { if (!file) { setPreview(null); return } const u = URL.createObjectURL(file); setPreview(u); return () => URL.revokeObjectURL(u) }, [file])
+  useEffect(() => { if (oldPath && !file) void signedUrls([oldPath]).then((m) => setPreview(m[oldPath] ?? null)) }, [oldPath, file])
   const set = (k: string, x: unknown) => { const n = { ...v, [k]: x }; setV(n); writeDraft(key, n) }
 
   const submit = async (base: Row | null) => {
@@ -28,8 +35,22 @@ function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e:
     if (miss.length) return setErr(`Fill in: ${miss.join(', ')}`)
     setBusy(true); setErr('')
     try {
-      const r = await saveRow(e.table, hh, base, { ...toPayload(e, v), visibility, show_on_tv: tv, ...(base ? {} : { author_id: me }) })
-      if ('ok' in r) { writeDraft(key, null); onDone() }
+      // Photo first: a failed upload must not lose the text edit, so it stops before saving.
+      const wantTv = visibility === 'shared' && tv
+      let image_path: string | null | undefined
+      let uploaded: string | null = null
+      if (e.photo && file) { uploaded = await uploadPhoto(hh, file, wantTv); image_path = uploaded }
+      else if (e.photo && removePhoto) image_path = null
+      const r = await saveRow(e.table, hh, base, { ...toPayload(e, v), visibility, show_on_tv: tv, ...(image_path !== undefined ? { image_path } : {}), ...(base ? {} : { author_id: me }) })
+      if ('ok' in r) {
+        writeDraft(key, null)
+        if (e.photo) {
+          if (uploaded || removePhoto) await deletePhoto(oldPath)                    // replaced or removed: drop the old file
+          else await setPhotoOnTv(oldPath, wantTv)                                   // kept: follow the Show on TV switch
+        }
+        onDone()
+      }
+      else if (uploaded) { await deletePhoto(uploaded); if ('conflict' in r) setConflict(r.conflict); else setErr('You no longer have access to this item.') }
       else if ('conflict' in r) setConflict(r.conflict)
       else setErr('You no longer have access to this item.')
     } catch (x) { setErr((x as Error).message) } finally { setBusy(false) }
@@ -47,6 +68,12 @@ function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e:
               : f.type === 'select' ? <select value={String(v[f.key] ?? '')} onChange={(ev) => set(f.key, ev.target.value)}>{options(f).map((o) => <option key={o} value={o}>{o}</option>)}</select>
                 : <input type={f.type === 'datetime' ? 'datetime-local' : f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'} value={String(v[f.key] ?? '')} onChange={(ev) => set(f.key, ev.target.value)} />}</div>
       ))}
+      {e.photo && <div><label>Photo</label>
+        {preview && !removePhoto && <img src={preview} alt="" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 12 }} />}
+        <div className="row" style={{ marginTop: 8 }}>
+          <label className="pbtn" style={{ margin: 0 }}>{oldPath || file ? 'Change photo' : 'Add photo'}<input type="file" accept="image/*" hidden onChange={(ev) => { setFile(ev.target.files?.[0] ?? null); setRemovePhoto(false) }} /></label>
+          {(oldPath || file) && !removePhoto && <button className="pbtn danger" onClick={() => { setFile(null); setRemovePhoto(true) }}>Remove photo</button>}
+        </div>{removePhoto && <div className="dim">The photo will be removed when you save.</div>}</div>}
       <label className="chk"><input type="checkbox" checked={visibility === 'draft'} onChange={(ev) => setVis(ev.target.checked ? 'draft' : 'shared')} />Keep as my private draft</label>
       {e.tvToggle && <label className="chk"><input type="checkbox" checked={tv} disabled={visibility === 'draft'} onChange={(ev) => setTv(ev.target.checked)} />Show on TV</label>}
       {err && <div className="err">{err}</div>}
@@ -73,7 +100,8 @@ export function Crud({ e, hh, me, extraOptions = {}, decorate }: { e: Entity; hh
   const [rows, setRows] = useState<Row[] | null>(null)
   const [editing, setEditing] = useState<Row | 'new' | null>(null)
   const [err, setErr] = useState('')
-  const load = () => listRows(e.table).then(setRows).catch((x) => setErr(x.message))
+  const [thumbs, setThumbs] = useState<Record<string, string>>({})
+  const load = () => listRows(e.table).then(async (r) => { setRows(r); if (e.photo) setThumbs(await signedUrls(r.map((x) => x.image_path as string).filter(Boolean)).catch(() => ({}))) }).catch((x) => setErr(x.message))
   useEffect(() => { setRows(null); void load() }, [e.table]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div>
@@ -85,13 +113,14 @@ export function Crud({ e, hh, me, extraOptions = {}, decorate }: { e: Entity; hh
         <div key={r.id}>
           <button className="item" onClick={() => setEditing(r)}>
             <span className={`badge ${r.visibility}`}>{r.visibility === 'draft' ? 'Private draft' : e.tvToggle ? (r.show_on_tv ? 'Shared · on TV' : 'Shared · phone only') : 'Shared'}</span>
+            {e.photo && !!r.image_path && !!thumbs[r.image_path as string] && <img src={thumbs[r.image_path as string]} alt="" style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 10, marginBottom: 6 }} />}
             <span>{e.title(r)}</span>{e.sub && <span className="sub">{e.sub(r)}</span>}
           </button>
           {decorate?.(r)}
         </div>
       ))}
       {editing && <Form e={e} hh={hh} me={me} row={editing === 'new' ? null : editing} extraOptions={extraOptions} onCancel={() => setEditing(null)} onDone={() => { setEditing(null); void load() }}
-        onDelete={editing === 'new' ? undefined : async () => { if (confirm(`Delete this ${e.label.toLowerCase()}?`)) { try { await removeRow(e.table, editing.id); setEditing(null); void load() } catch (x) { setErr((x as Error).message) } } }} />}
+        onDelete={editing === 'new' ? undefined : async () => { if (confirm(`Delete this ${e.label.toLowerCase()}?`)) { try { await removeRow(e.table, editing.id); if (e.photo) await deletePhoto(editing.image_path as string | undefined); setEditing(null); void load() } catch (x) { setErr((x as Error).message) } } }} />}
     </div>
   )
 }

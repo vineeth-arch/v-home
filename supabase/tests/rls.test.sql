@@ -1,5 +1,5 @@
 begin;
-select plan(43);
+select plan(48);
 
 -- identities -------------------------------------------------------------
 insert into auth.users (id, aud, role, email, is_anonymous) values
@@ -131,6 +131,29 @@ select pg_temp.act_as('00000000-0000-0000-0000-00000000a11c');
 insert into public.ritual_selections (household_id, day, slot) values (current_setting('t.hh1')::uuid, '2026-09-28', 'weekly');
 select throws_ok(format($$insert into public.ritual_selections (household_id, day, slot) values (%L, '2026-09-28', 'weekly')$$, current_setting('t.hh1')), '23505', null, 'duplicate weekly selection rejected');
 select lives_ok(format($$insert into public.ritual_selections (household_id, day, slot) values (%L, '2026-09-29', 'weekly')$$, current_setting('t.hh1')), 'different day is fine');
+
+-- photos: a TV can read a storage object only when its media row is approved for TV
+reset role;
+insert into public.media (path, household_id, author_id, show_on_tv) values
+  (current_setting('t.hh1') || '/shown.jpg', current_setting('t.hh1')::uuid, '00000000-0000-0000-0000-00000000a11c', true),
+  (current_setting('t.hh1') || '/hidden.jpg', current_setting('t.hh1')::uuid, '00000000-0000-0000-0000-00000000a11c', false);
+insert into storage.objects (bucket_id, name, owner) values
+  ('household-media', current_setting('t.hh1') || '/shown.jpg', '00000000-0000-0000-0000-00000000a11c'),
+  ('household-media', current_setting('t.hh1') || '/hidden.jpg', '00000000-0000-0000-0000-00000000a11c');
+insert into public.members (household_id, user_id, role, display_name) values (current_setting('t.hh1')::uuid, '00000000-0000-0000-0000-000000007002', 'display', 'TV3') on conflict do nothing;
+select pg_temp.act_as('00000000-0000-0000-0000-000000007002', true);
+select is((select count(*) from storage.objects where bucket_id = 'household-media')::int, 1, 'TV sees only the approved photo');
+select is((select name from storage.objects where bucket_id = 'household-media'), current_setting('t.hh1') || '/shown.jpg', 'and it is the approved one');
+select pg_temp.act_as('00000000-0000-0000-0000-00000000a11c');
+select is((select count(*) from storage.objects where bucket_id = 'household-media')::int, 2, 'a member sees both photos');
+select pg_temp.act_as('00000000-0000-0000-0000-00000000ca01');
+select is((select count(*) from storage.objects where bucket_id = 'household-media')::int, 0, 'another household sees no photos');
+reset role;
+update public.media set show_on_tv = true where path like '%/hidden.jpg';
+select pg_temp.act_as('00000000-0000-0000-0000-000000007002', true);
+select is((select count(*) from storage.objects where bucket_id = 'household-media')::int, 2, 'TV sees the photo once Show on TV is on');
+reset role;
+delete from public.members where user_id = '00000000-0000-0000-0000-000000007002';
 
 -- a TV can unpair itself (fresh pairing first)
 reset role;

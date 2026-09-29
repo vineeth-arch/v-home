@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Btn, DreamArt } from './ui'
+import { Btn, DreamPic } from './ui'
 import { useLayer } from './FocusProvider'
 import { useApp, personName } from './state'
 import { useTimerActions } from './timerActions'
@@ -34,7 +34,7 @@ export function MorningRitual({ onClose, startAt = 0 }: { onClose: () => void; s
   const whos = ['both', ...snap.household.people.map((p) => p.id)]
   const steps = [dream?.nextStep, ...snap.tasks.filter((t) => !t.done && t.kind === 'task').slice(0, 2).map((t) => t.title)].filter(Boolean) as string[]
   return <Flow scope="ritual" onClose={onClose} start={startAt} cards={[
-    { step: 'Imagine', body: dream ? <><div className="art"><DreamArt kind={dream.art} /></div><div className="big">{dream.title}</div><div className="dim">{dream.why}</div></> : <div className="big">What would a good day feel like?</div> },
+    { step: 'Imagine', body: dream ? <><div className="art"><DreamPic imagePath={dream.imagePath} kind={dream.art} /></div><div className="big">{dream.title}</div><div className="dim">{dream.why}</div></> : <div className="big">What would a good day feel like?</div> },
     { step: 'Intend', body: <><div className="big">{dream?.affirmation ?? r?.text}</div><div className="dim">Take a moment to name one thing you are grateful for. Say it out loud if you like.</div></> },
     { step: 'Act', body: <>
       <div className="big">What small step moves us toward this today?</div>
@@ -55,7 +55,7 @@ export function BedtimeRitual({ onClose }: { onClose: () => void }) {
     <Flow scope="ritual" onClose={onClose} cards={[
       { step: 'Appreciate', body: <div className="big">What was one good thing about today?</div> },
       { step: 'Connect', body: <><div className="big">Tell each other one thing you appreciate.</div><div className="dim">Or simply share how the day felt.</div></> },
-      { step: 'Imagine', body: <>{dream && <div className="art"><DreamArt kind={dream.art} /></div>}<div className="big">{r?.text}</div></> },
+      { step: 'Imagine', body: <>{dream && <div className="art"><DreamPic imagePath={dream.imagePath} kind={dream.art} /></div>}<div className="big">{r?.text}</div></> },
       { step: 'Rest', body: <>
         <div className="big">Ready to rest?</div>
         <div className="presets" style={{ justifyContent: 'center' }}>

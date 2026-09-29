@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { useApp } from './state'
 import { useFocusable } from './FocusProvider'
 import type { Dream } from '../shared/model'
 
@@ -22,6 +23,15 @@ export function DreamArt({ kind }: { kind: Dream['art'] }) {
       {kind === 'window' && <><rect x="250" y="80" width="300" height="340" rx="150" fill="#292524" stroke={A} strokeWidth="10" /><rect x="395" y="80" width="10" height="340" fill={A} /><rect x="250" y="240" width="300" height="10" fill={A} /><rect x="0" y="420" width="800" height="80" fill={S} opacity=".6" /></>}
     </svg>
   )
+}
+
+/** The dream's own photo when it has one (and it loads), otherwise the flat art. Never a broken image. */
+export function DreamPic({ imagePath, kind }: { imagePath?: string; kind: Dream['art'] }) {
+  const { images } = useApp()
+  const src = imagePath ? images[imagePath] : undefined
+  const [failed, setFailed] = useState<string | null>(null)
+  if (!src || failed === src) return <DreamArt kind={kind} />
+  return <img className="dream-art dream-photo" src={src} alt="" onError={() => setFailed(src)} />
 }
 
 export const fmtTime = (iso: string | Date | number, tz: string) =>
