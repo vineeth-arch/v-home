@@ -1,7 +1,7 @@
 import type { Row } from './api'
 
 export type FieldType = 'text' | 'textarea' | 'datetime' | 'date' | 'checkbox' | 'number' | 'select'
-export interface Field { key: string; label: string; type: FieldType; options?: string[]; required?: boolean; defaultValue?: unknown }
+export interface Field { key: string; label: string; type: FieldType; options?: string[]; required?: boolean; defaultValue?: unknown; nullable?: boolean }
 export interface Entity {
   table: string; label: string; plural: string; fields: Field[]
   title: (r: Row) => string; sub?: (r: Row) => string
@@ -21,8 +21,8 @@ export const ENTITIES: Record<string, Entity> = {
     fields: [{ key: 'title', label: 'Dream', type: 'text', required: true }, { key: 'why', label: 'Why it matters', type: 'textarea' }, { key: 'affirmation', label: 'Affirmation', type: 'textarea' }, { key: 'next_step', label: 'Next small step', type: 'text' }, { key: 'target_date', label: 'Target date', type: 'date' }, { key: 'art', label: 'Art style', type: 'select', options: ['sun', 'hills', 'sea', 'window'], defaultValue: 'sun' }],
     title: (r) => S(r.title), sub: (r) => S(r.next_step) },
   notes: { table: 'notes', label: 'Note', plural: 'Notes', tvToggle: true,
-    fields: [{ key: 'body', label: 'Note', type: 'textarea', required: true }],
-    title: (r) => S(r.body), sub: () => '' },
+    fields: [{ key: 'body', label: 'Note', type: 'textarea', required: true }, { key: 'to_user', label: 'For (optional: shows on the TV today as a note for them)', type: 'select', nullable: true, defaultValue: '' }],
+    title: (r) => S(r.body), sub: (r) => (r.to_user ? 'a note for you' : '') },
   ideas: { table: 'ideas', label: 'Idea', plural: 'Ideas', tvToggle: false, photo: true,
     fields: [{ key: 'title', label: 'Idea', type: 'text', required: true }, { key: 'note', label: 'Note', type: 'textarea' }, { key: 'link', label: 'Link', type: 'text' }, { key: 'status', label: 'Status', type: 'select', options: ['new', 'discuss', 'planned', 'archived'], defaultValue: 'new' }, { key: 'pinned', label: 'Pinned', type: 'checkbox' }],
     title: (r) => S(r.title), sub: (r) => `${S(r.status)}${r.pinned ? ' · pinned' : ''}` },
@@ -42,7 +42,7 @@ export function toPayload(e: Entity, v: Record<string, unknown>) {
     if (f.type === 'checkbox') out[f.key] = Boolean(x)
     else if (f.type === 'number') out[f.key] = x === '' || x == null ? null : Number(x)
     else if (f.type === 'datetime') out[f.key] = x ? new Date(String(x)).toISOString() : null
-    else if (f.type === 'date') out[f.key] = x ? String(x) : null
+    else if (f.type === 'date' || f.nullable) out[f.key] = x ? String(x) : null
     else out[f.key] = x == null ? '' : x
   }
   return out

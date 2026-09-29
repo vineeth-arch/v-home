@@ -2,6 +2,7 @@
 import type { Snapshot } from './model'
 import { DEFAULT_PREFS } from './prefs'
 import { localDate } from './daily'
+import { mondayOf } from './week'
 
 const day = (offset: number, hhmm: string) => {
   // date in the household timezone (IST): using the UTC date shifts "tomorrow" between 00:00 and 05:30 IST
@@ -37,6 +38,7 @@ export const fixtureSnapshot = (): Snapshot => ({
     { id: 'd2', title: 'A reading corner with a window', why: 'Somewhere quiet that is ours.', affirmation: 'Our home makes room for rest.', nextStep: 'Measure the corner and pick a chair', art: 'window' },
   ],
   notes: [
+    { id: 'n0', text: 'Proud of you for today. Tea on the balcony later?', author: 'p1', to: 'p2', at: new Date().toISOString() },
     { id: 'n1', text: 'Thank you for handling the morning rush this week.', author: 'p2' },
     { id: 'n2', text: 'Dinner tonight is on me.', author: 'p1' },
   ],
@@ -58,7 +60,8 @@ export const fixtureSnapshot = (): Snapshot => ({
     { entry: { id: 'w5', title: 'Sunday Table', type: 'series', runtimeMin: 30, service: 'Netflix', mood: 'light', summary: 'Short episodes about cooking together.' }, prefs: { p1: 'want', p2: 'want' } },
   ],
   quotes: [],
-  syncedAt: Date.now(),
+  weekly: { day: mondayOf(localDate(new Date(), 'Asia/Kolkata')), eventId: 'e3', taskId: 't1', dateNight: { day: 'Saturday', ideaId: 'i2' } },
+  moments: [], syncedAt: Date.now(),
 })
 
 export const fixtureWeather = { tempC: 27, hiC: 31, loC: 24, rainPct: 20, tomorrow: { hiC: 30, loC: 24, rainPct: 40 }, label: 'Partly cloudy' }

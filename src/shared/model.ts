@@ -8,7 +8,9 @@ export interface PinnedApp { id: string; label: string; verified: boolean }
 export interface EventItem { id: string; title: string; at: string; allDay?: boolean }
 export interface TaskItem { id: string; title: string; owner: 'both' | string; kind: 'task' | 'grocery'; done: boolean }
 export interface Dream { id: string; title: string; why: string; affirmation: string; nextStep: string; targetDate?: string; art: 'sun' | 'hills' | 'sea' | 'window'; imagePath?: string }
-export interface NoteItem { id: string; text: string; author: string }
+export interface NoteItem { id: string; text: string; author: string; to?: string; at?: string }
+/** A standalone photo (not attached to a dream or idea). takenOn is the photo's own date, YYYY-MM-DD. */
+export interface Moment { path: string; takenOn?: string; caption?: string }
 export interface Idea { id: string; title: string; note: string; status: 'new' | 'discuss' | 'planned' | 'archived'; author: string; pinned?: boolean; imagePath?: string }
 export interface WatchItem { entry: WatchEntry & { summary?: string; posterPath?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
 
@@ -16,11 +18,12 @@ export interface Snapshot {
   household: { id: string; name: string; tz: string; hiddenReflections: string[]; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[]; customApps: PinnedApp[]; prefs: TvPrefs }
   events: EventItem[]; tasks: TaskItem[]; dreams: Dream[]; notes: NoteItem[]; ideas: Idea[]; watch: WatchItem[]
   quotes: Reflection[]; weekly?: { day: string } & WeeklyPayload
+  moments: Moment[]
   syncedAt: number
 }
 export const emptySnapshot = (tz = 'Asia/Kolkata'): Snapshot => ({
   household: { id: '', name: 'Our Home', tz, hiddenReflections: [], people: [], pinnedApps: [], customApps: [], prefs: DEFAULT_PREFS },
-  events: [], tasks: [], dreams: [], notes: [], ideas: [], watch: [], quotes: [], syncedAt: Date.now(),
+  events: [], tasks: [], dreams: [], notes: [], ideas: [], watch: [], quotes: [], moments: [], syncedAt: Date.now(),
 })
 
 // Shown until the household pins its own. IDs are unverified until the on-TV gate.

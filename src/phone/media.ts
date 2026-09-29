@@ -5,10 +5,10 @@ const BUCKET = 'household-media'
 const c = () => getClient()
 
 /** Resize, record the media row, then upload. If the upload fails the row is removed (nothing dangling). */
-export async function uploadPhoto(hh: string, file: Blob, showOnTv: boolean): Promise<string> {
+export async function uploadPhoto(hh: string, file: Blob, showOnTv: boolean, extra: { taken_on?: string | null; caption?: string | null } = {}): Promise<string> {
   const jpeg = await resizeToJpeg(file)
   const path = `${hh}/${crypto.randomUUID()}.jpg`
-  const ins = await c().from('media').insert({ path, household_id: hh, show_on_tv: showOnTv })
+  const ins = await c().from('media').insert({ path, household_id: hh, show_on_tv: showOnTv, ...extra })
   if (ins.error) throw new Error(ins.error.message)
   const up = await c().storage.from(BUCKET).upload(path, jpeg, { contentType: 'image/jpeg' })
   if (up.error) { await c().from('media').delete().eq('path', path); throw new Error(up.error.message) }

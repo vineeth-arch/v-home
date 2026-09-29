@@ -3,17 +3,19 @@ import { getHousehold, listRows, saveRow, type Row } from './api'
 import { localDate } from '../shared/daily'
 import { inWeek, mondayOf, type WeeklyPayload } from '../shared/week'
 
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
 /** One plan, one task, one dream step for the week. Saved as a single ritual_selections row per week. */
 export function Weekly({ hh }: { hh: string }) {
   const [tz, setTz] = useState('Asia/Kolkata')
-  const [events, setEvents] = useState<Row[]>([]); const [tasks, setTasks] = useState<Row[]>([]); const [dreams, setDreams] = useState<Row[]>([])
+  const [events, setEvents] = useState<Row[]>([]); const [tasks, setTasks] = useState<Row[]>([]); const [dreams, setDreams] = useState<Row[]>([]); const [ideas, setIdeas] = useState<Row[]>([])
   const [existing, setExisting] = useState<Row | null>(null)
   const [v, setV] = useState<WeeklyPayload>({}); const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null); const [busy, setBusy] = useState(false)
   const monday = (t = tz) => mondayOf(localDate(new Date(), t))
 
   const load = async () => {
-    const [h, ev, tk, dr, rs] = await Promise.all([getHousehold(), listRows('events'), listRows('tasks'), listRows('dreams'), listRows('ritual_selections')])
-    setTz(h.timezone); setEvents(ev); setTasks(tk.filter((t) => !t.done && t.kind === 'task')); setDreams(dr)
+    const [h, ev, tk, dr, rs, id] = await Promise.all([getHousehold(), listRows('events'), listRows('tasks'), listRows('dreams'), listRows('ritual_selections'), listRows('ideas')])
+    setTz(h.timezone); setEvents(ev); setTasks(tk.filter((t) => !t.done && t.kind === 'task')); setDreams(dr); setIdeas(id.filter((i) => i.status !== 'archived'))
     const cur = rs.find((r) => r.slot === 'weekly' && r.day === mondayOf(localDate(new Date(), h.timezone))) ?? null
     setExisting(cur); if (cur) setV(cur.payload as WeeklyPayload)
   }
@@ -55,6 +57,11 @@ export function Weekly({ hh }: { hh: string }) {
     <label>A dream to move forward</label>
     <select value={v.dreamId ?? ''} onChange={(e) => { const d = dreams.find((x) => x.id === e.target.value); setV({ ...v, dreamId: e.target.value || undefined, stepTitle: v.stepTitle || (d ? String(d.next_step ?? '') : '') }) }}><option value="">None yet</option>{opt(dreams, (r) => String(r.title))}</select>
     {dream && <><label>The small step</label><input value={v.stepTitle ?? ''} onChange={(e) => setV({ ...v, stepTitle: e.target.value })} /></>}
+    <label>Date night</label>
+    <select value={v.dateNight?.day ?? ''} onChange={(e) => setV({ ...v, dateNight: e.target.value ? { ...v.dateNight, day: e.target.value } : undefined })}><option value="">Not this week</option>{DAYS.map((d) => <option key={d} value={d}>{d}</option>)}</select>
+    {v.dateNight && <><label>What we'll do (pick an idea or write one)</label>
+      <select value={v.dateNight.ideaId ?? ''} onChange={(e) => setV({ ...v, dateNight: { ...v.dateNight!, ideaId: e.target.value || undefined } })}><option value="">Write my own</option>{opt(ideas, (r) => String(r.title))}</select>
+      {!v.dateNight.ideaId && <input placeholder="e.g. Dinner at the rooftop place" value={v.dateNight.text ?? ''} onChange={(e) => setV({ ...v, dateNight: { ...v.dateNight!, text: e.target.value } })} />}</>}
     {msg && <div className={msg.ok ? 'ok' : 'err'}>{msg.text}</div>}
     <div className="row" style={{ marginTop: 16 }}><button className="pbtn primary" disabled={busy} onClick={() => void save()}>{existing ? 'Update this week' : 'Save this week'}</button></div></div>
 }

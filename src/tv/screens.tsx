@@ -10,6 +10,7 @@ import { appsOf, type WatchItem } from '../shared/model'
 import { appForService } from '../shared/launch'
 import { heroDream } from '../shared/prefs'
 import { mondayOf } from '../shared/week'
+import { notesForToday, sharedNote } from '../shared/partnerNotes'
 import { allApps } from '../shared/apps'
 import qrcode from 'qrcode-generator'
 
@@ -67,7 +68,7 @@ export function OurHome() {
   const quote = mode === 'home' && dream ? dream.affirmation : refl?.text ?? ''
   const cap = mode === 'home' && dream ? dream.title : refl?.author ? `${refl.author}${refl.source ? `, ${refl.source}` : ''}` : refl && !refl.id.match(/^[me]\d+$/) ? 'Ours' : 'Original reflection'
   const items = guest ? [] : upcoming(snap, now, mode)
-  const note = guest ? undefined : snap.notes[0]
+  const note = guest ? undefined : sharedNote(snap.notes)
   const forUs = note ? { l: 'A note', t: `“${note.text}” · ${personName(snap, note.author)}` } : stepDream ? { l: 'A small step', t: stepDream.nextStep } : null
   return <>
     <div className="main" data-cards={prefs.showToday || prefs.showForUs ? undefined : 'none'}>
@@ -171,9 +172,21 @@ function WeeklyCard() {
   const w = snap.weekly
   if (!w || w.day !== mondayOf(localDate(now, tz))) return null
   const ev = snap.events.find((e) => e.id === w.eventId), task = snap.tasks.find((t) => t.id === w.taskId), dream = snap.dreams.find((d) => d.id === w.dreamId)
-  const rows: [string, string][] = [['A plan', ev?.title], ['A task', task?.title], ['A dream step', w.stepTitle ? `${w.stepTitle}${dream ? ` (${dream.title})` : ''}` : undefined]].filter((r): r is [string, string] => !!r[1])
+  const dn = w.dateNight, dnIdea = dn?.ideaId ? snap.ideas.find((i) => i.id === dn.ideaId)?.title : undefined
+  const rows: [string, string][] = [['A plan', ev?.title], ['A task', task?.title], ['A dream step', w.stepTitle ? `${w.stepTitle}${dream ? ` (${dream.title})` : ''}` : undefined],
+    ['Date night', dn?.day ? `${dn.day}${dnIdea || dn.text ? ` · ${dnIdea ?? dn.text}` : ''}` : undefined]].filter((r): r is [string, string] => !!r[1])
   if (!rows.length) return null
   return <div className="card" style={{ marginBottom: 16 }}><h2>This week we chose</h2>{rows.map(([a, b]) => <div className="row" key={a}><span className="t">{a}</span><span>{b}</span></div>)}</div>
+}
+
+/** Today's "A note for you" cards, one per recipient. Names come from the household's members. */
+function NotesForYou() {
+  const { snap, now, tz } = useApp()
+  return <>{notesForToday(snap.notes, now, tz).map((n) => (
+    <div className="card note-for" key={n.id} style={{ marginBottom: 16 }}>
+      <div className="dim small">For {personName(snap, n.to!)}, from {personName(snap, n.author)}</div>
+      <div className="serif" style={{ fontSize: 44, marginTop: 8 }}>“{n.text}”</div>
+    </div>))}</>
 }
 
 export function Us() {
@@ -184,6 +197,7 @@ export function Us() {
   return <>
     <div className="tabs">{tabs.map((t) => <Btn key={t} id={`tab-${t}`} initial={t === 'This Week'} className={`chip ${tab === t ? 'cur' : ''}`} onClick={() => setTab(t)}>{t}</Btn>)}</div>
     <div className="scroll-free list">
+      {tab === 'This Week' && <NotesForYou />}
       {tab === 'This Week' && <WeeklyCard />}
       {tab === 'This Week' && (snap.events.length ? snap.events.map((e) => <div className="card item" key={e.id}><span className="dim" style={{ width: 380, whiteSpace: 'nowrap' }}>{fmtDay(e.at, tz)}{e.allDay ? '' : ` · ${fmtTime(e.at, tz)}`}</span>{e.title}</div>) : <div className="empty">Nothing planned this week.</div>)}
       {tab === 'Home Tasks' && snap.tasks.map((t) => (
@@ -193,7 +207,7 @@ export function Us() {
       {tab === 'Our Dreams' && <div className="grid3" style={{ gridTemplateColumns: '1fr 1fr' }}>{snap.dreams.map((d) => (
         <div key={d.id} className="card" style={{ padding: 0, overflow: 'hidden' }}><div style={{ height: 200 }}><DreamPic imagePath={d.imagePath} kind={d.art} /></div>
           <div style={{ padding: '18px 26px' }}><div className="serif" style={{ fontSize: 36 }}>{d.title}</div><div className="dim small">{d.why}</div><div className="small" style={{ marginTop: 8 }}>Next: {d.nextStep}</div></div></div>))}</div>}
-      {tab === 'Notes' && snap.notes.map((n) => <div className="card item" key={n.id}><span>“{n.text}”</span><span className="dim small" style={{ marginLeft: 'auto' }}>{personName(snap, n.author)}</span></div>)}
+      {tab === 'Notes' && snap.notes.filter((n) => !n.to).map((n) => <div className="card item" key={n.id}><span>“{n.text}”</span><span className="dim small" style={{ marginLeft: 'auto' }}>{personName(snap, n.author)}</span></div>)}
     </div>
   </>
 }

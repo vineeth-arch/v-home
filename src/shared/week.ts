@@ -9,4 +9,5 @@ export function mondayOf(date: string): string {
 /** Is `date` within the week that starts on `monday`? */
 export const inWeek = (date: string, monday: string) => mondayOf(date) === monday
 
-export interface WeeklyPayload { eventId?: string; taskId?: string; dreamId?: string; stepTitle?: string }
+export interface DateNight { day: string; ideaId?: string; text?: string }
+export interface WeeklyPayload { eventId?: string; taskId?: string; dreamId?: string; stepTitle?: string; dateNight?: DateNight }

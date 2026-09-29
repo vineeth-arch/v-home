@@ -10,6 +10,7 @@ import { LaunchStrip, MoreApps, TvLayout } from './TvLayout'
 import { sanitizeCustomApps } from '../shared/apps'
 import { Reflections } from './Reflections'
 import { Weekly } from './Weekly'
+import { Moments } from './Moments'
 import { TmdbSearch, refreshAvailability } from './TmdbSearch'
 import { ideaToDream, ideaToTask } from '../shared/convert'
 
@@ -133,7 +134,7 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
     <h2>Account</h2><div className="dim">{me.email}</div><div className="row" style={{ marginTop: 8 }}><button className="pbtn" onClick={async () => { await signOut(); onSignOut() }}>Sign out</button></div></div>
 }
 
-const TABS = ['events', 'tasks', 'dreams', 'notes', 'ideas', 'weekly', 'reflections', 'watch', 'displays', 'settings'] as const
+const TABS = ['events', 'tasks', 'dreams', 'notes', 'photos', 'ideas', 'weekly', 'reflections', 'watch', 'displays', 'settings'] as const
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); const [tab, setTab] = useState<(typeof TABS)[number]>(qs.get('code') ? 'displays' : 'events')
   const [people, setPeople] = useState<{ id: string; name: string }[]>([])
@@ -146,14 +147,16 @@ export function App() {
   if (!me.householdId) return <Onboarding onDone={refresh} />
   const hh = me.householdId
   const ownerOpts = { people: people.map((p) => p.id) }
+  const names = Object.fromEntries(people.map((p) => [p.id, p.name]))
   return <><div className="p">
     {tab === 'settings' ? <Settings hh={hh} me={me} onSignOut={() => setMe(null)} />
       : tab === 'displays' ? <Displays hh={hh} />
         : tab === 'watch' ? <Watch hh={hh} me={me.userId} people={people} />
           : tab === 'weekly' ? <Weekly hh={hh} />
+          : tab === 'photos' ? <Moments hh={hh} />
             : tab === 'reflections' ? <Reflections hh={hh} me={me.userId} />
               : tab === 'ideas' ? <Ideas hh={hh} me={me.userId} />
-                : <Crud key={tab} e={ENTITIES[tab]} hh={hh} me={me.userId} extraOptions={ownerOpts} />}
+                : <Crud key={tab} e={ENTITIES[tab]} hh={hh} me={me.userId} extraOptions={ownerOpts} labels={names} />}
   </div>
     <nav className="tabs">{TABS.map((t) => <button key={t} className={`pbtn ${tab === t ? 'cur' : ''}`} onClick={() => setTab(t)}>{t === 'weekly' ? 'This week' : ENTITIES[t]?.plural ?? (t === 'watch' ? 'Watch' : t[0].toUpperCase() + t.slice(1))}</button>)}</nav></>
 }

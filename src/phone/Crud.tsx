@@ -13,7 +13,7 @@ function initialValues(e: Entity, r: Row | null, extra: Record<string, string[]>
   return { ...v, __extra: extra }
 }
 
-function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e: Entity; hh: string; me: string; row: Row | null; extraOptions: Record<string, string[]>; onDone: () => void; onCancel: () => void; onDelete?: () => void }) {
+function Form({ e, hh, me, row, extraOptions, labels, onDone, onCancel, onDelete }: { e: Entity; hh: string; me: string; row: Row | null; extraOptions: Record<string, string[]>; labels: Record<string, string>; onDone: () => void; onCancel: () => void; onDelete?: () => void }) {
   const key = draftKey(e.table, row?.id ?? null)
   const saved = useMemo(() => readDraft(key), [key])
   const [v, setV] = useState<Record<string, unknown>>(() => (saved as Record<string, unknown>) ?? initialValues(e, row, extraOptions))
@@ -41,7 +41,8 @@ function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e:
       let uploaded: string | null = null
       if (e.photo && file) { uploaded = await uploadPhoto(hh, file, wantTv); image_path = uploaded }
       else if (e.photo && removePhoto) image_path = null
-      const r = await saveRow(e.table, hh, base, { ...toPayload(e, v), visibility, show_on_tv: tv, ...(image_path !== undefined ? { image_path } : {}), ...(base ? {} : { author_id: me }) })
+      const r = await saveRow(e.table, hh, base, { ...toPayload(e, v), visibility, show_on_tv: tv || Boolean(v.to_user), // a note addressed to someone is meant for the TV
+        ...(image_path !== undefined ? { image_path } : {}), ...(base ? {} : { author_id: me }) })
       if ('ok' in r) {
         writeDraft(key, null)
         if (e.photo) {
@@ -55,7 +56,7 @@ function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e:
       else setErr('You no longer have access to this item.')
     } catch (x) { setErr((x as Error).message) } finally { setBusy(false) }
   }
-  const options = (f: (typeof e.fields)[number]) => (f.key === 'owner' ? ['both', ...(extraOptions.people ?? [])] : f.options ?? [])
+  const options = (f: (typeof e.fields)[number]) => (f.key === 'owner' ? ['both', ...(extraOptions.people ?? [])] : f.key === 'to_user' ? ['', ...(extraOptions.people ?? []).filter((id) => id !== me)] : f.options ?? [])
   return (
     <div className="sheet"><div>
       <h1>{row ? `Edit ${e.label.toLowerCase()}` : `New ${e.label.toLowerCase()}`}</h1>
@@ -65,7 +66,7 @@ function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e:
           ? <label className="chk" key={f.key}><input type="checkbox" checked={Boolean(v[f.key])} onChange={(ev) => set(f.key, ev.target.checked)} />{f.label}</label>
           : <div key={f.key}><label>{f.label}</label>
             {f.type === 'textarea' ? <textarea value={String(v[f.key] ?? '')} onChange={(ev) => set(f.key, ev.target.value)} />
-              : f.type === 'select' ? <select value={String(v[f.key] ?? '')} onChange={(ev) => set(f.key, ev.target.value)}>{options(f).map((o) => <option key={o} value={o}>{o}</option>)}</select>
+              : f.type === 'select' ? <select value={String(v[f.key] ?? '')} onChange={(ev) => set(f.key, ev.target.value)}>{options(f).map((o) => <option key={o} value={o}>{o === '' ? 'Everyone' : labels[o] ?? o}</option>)}</select>
                 : <input type={f.type === 'datetime' ? 'datetime-local' : f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'} value={String(v[f.key] ?? '')} onChange={(ev) => set(f.key, ev.target.value)} />}</div>
       ))}
       {e.photo && <div><label>Photo</label>
@@ -96,7 +97,7 @@ function Form({ e, hh, me, row, extraOptions, onDone, onCancel, onDelete }: { e:
   )
 }
 
-export function Crud({ e, hh, me, extraOptions = {}, decorate }: { e: Entity; hh: string; me: string; extraOptions?: Record<string, string[]>; decorate?: (r: Row) => React.ReactNode }) {
+export function Crud({ e, hh, me, extraOptions = {}, labels = {}, decorate }: { e: Entity; hh: string; me: string; extraOptions?: Record<string, string[]>; labels?: Record<string, string>; decorate?: (r: Row) => React.ReactNode }) {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [editing, setEditing] = useState<Row | 'new' | null>(null)
   const [err, setErr] = useState('')
@@ -119,7 +120,7 @@ export function Crud({ e, hh, me, extraOptions = {}, decorate }: { e: Entity; hh
           {decorate?.(r)}
         </div>
       ))}
-      {editing && <Form e={e} hh={hh} me={me} row={editing === 'new' ? null : editing} extraOptions={extraOptions} onCancel={() => setEditing(null)} onDone={() => { setEditing(null); void load() }}
+      {editing && <Form e={e} hh={hh} me={me} row={editing === 'new' ? null : editing} extraOptions={extraOptions} labels={labels} onCancel={() => setEditing(null)} onDone={() => { setEditing(null); void load() }}
         onDelete={editing === 'new' ? undefined : async () => { if (confirm(`Delete this ${e.label.toLowerCase()}?`)) { try { await removeRow(e.table, editing.id); if (e.photo) await deletePhoto(editing.image_path as string | undefined); setEditing(null); void load() } catch (x) { setErr((x as Error).message) } } }} />}
     </div>
   )

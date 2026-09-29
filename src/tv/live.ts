@@ -36,20 +36,21 @@ const q = async <T,>(p: PromiseLike<{ data: T | null; error: { message: string }
 }
 
 async function fetchRows(c: SupabaseClient, hh: string): Promise<Rows> {
-  const [household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly] = await Promise.all([
+  const [household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly, media] = await Promise.all([
     q(c.from('households').select('id,name,timezone,settings').eq('id', hh).single()),
     q(c.from('members').select('user_id,role,display_name').eq('household_id', hh)),
     q(c.from('events').select('id,title,starts_at,all_day').order('starts_at')),
     q(c.from('tasks').select('id,title,owner,kind,done').order('created_at')),
-    q(c.from('notes').select('id,body,author_id').order('created_at', { ascending: false })),
+    q(c.from('notes').select('id,body,author_id,to_user,created_at').order('created_at', { ascending: false })),
     q(c.from('dreams').select('id,title,why,affirmation,next_step,target_date,art,image_path').order('created_at')),
     q(c.from('ideas').select('id,title,note,status,author_id,pinned,image_path').order('created_at', { ascending: false })),
     q(c.from('watch_entries').select('id,title,type,runtime_min,service,mood,summary,watched,providers,providers_updated_at,poster_path')),
     q(c.from('watch_prefs').select('entry_id,user_id,pref')),
     q(c.from('quotes').select('id,slot,body,author,source,favorite').eq('hidden', false)),
     q(c.from('ritual_selections').select('day,payload').eq('slot', 'weekly').order('day', { ascending: false }).limit(1)),
+    q(c.from('media').select('path,taken_on,caption').eq('show_on_tv', true).order('created_at', { ascending: false }).limit(200)),
   ])
-  return { household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly } as unknown as Rows
+  return { household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly, media } as unknown as Rows
 }
 
 /** TV lifecycle: anonymous session, pairing, cached-first render, versioned sync, revoke handling. */
@@ -104,7 +105,7 @@ export function useLive(enabled: boolean): Live {
       fetchSnapshot: async () => toSnapshot(await fetchRows(c, hh!)),
       onSnapshot: (s) => {
         setSnapshot(s); setOffline(false); void store.set(s)
-        const paths = [...s.dreams.map((d) => d.imagePath), ...s.ideas.map((i) => i.imagePath)].filter((x): x is string => !!x)
+        const paths = [...s.dreams.map((d) => d.imagePath), ...s.ideas.map((i) => i.imagePath), ...s.moments.map((m) => m.path)].filter((x): x is string => !!x)
         lastPaths.current = paths
         void resolveImages(c, paths, imgCache.current, objectUrls.current).then(setImages)
       },

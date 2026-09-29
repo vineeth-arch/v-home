@@ -1,4 +1,4 @@
-import type { Dream, EventItem, Idea, NoteItem, Snapshot, TaskItem, WatchItem } from './model'
+import type { Dream, EventItem, Idea, Moment, NoteItem, Snapshot, TaskItem, WatchItem } from './model'
 import { resolvePrefs } from './prefs'
 import { sanitizeCustomApps } from './apps'
 import type { WeeklyPayload } from './week'
@@ -11,7 +11,8 @@ export interface Rows {
   members: { user_id: string; role: string; display_name: string }[]
   events: { id: string; title: string; starts_at: string; all_day: boolean }[]
   tasks: { id: string; title: string; owner: string; kind: 'task' | 'grocery'; done: boolean }[]
-  notes: { id: string; body: string; author_id: string }[]
+  notes: { id: string; body: string; author_id: string; to_user?: string | null; created_at?: string }[]
+  media?: { path: string; taken_on: string | null; caption: string | null }[]
   dreams: { id: string; title: string; why: string; affirmation: string; next_step: string; target_date: string | null; art: string; image_path?: string | null }[]
   ideas: { id: string; title: string; note: string; status: Idea['status']; author_id: string; pinned: boolean; image_path?: string | null }[]
   watch_entries: { id: string; title: string; type: 'movie' | 'series'; runtime_min: number | null; service: string | null; mood: string | null; summary: string | null; watched: boolean; providers: Record<string, string[]>; providers_updated_at: string | null; poster_path?: string | null }[]
@@ -39,7 +40,7 @@ export function toSnapshot(r: Rows, now = Date.now()): Snapshot {
     },
     events: r.events.map((e): EventItem => ({ id: e.id, title: e.title, at: e.starts_at, allDay: e.all_day })),
     tasks: r.tasks.map((t): TaskItem => ({ id: t.id, title: t.title, owner: t.owner, kind: t.kind, done: t.done })),
-    notes: r.notes.map((n): NoteItem => ({ id: n.id, text: n.body, author: n.author_id })),
+    notes: r.notes.map((n): NoteItem => ({ id: n.id, text: n.body, author: n.author_id, to: n.to_user ?? undefined, at: n.created_at })),
     dreams: r.dreams.map((d): Dream => ({ id: d.id, title: d.title, why: d.why, affirmation: d.affirmation, nextStep: d.next_step, targetDate: d.target_date ?? undefined, art: (ART as readonly string[]).includes(d.art) ? (d.art as Dream['art']) : 'sun', imagePath: d.image_path ?? undefined })),
     ideas: r.ideas.map((i): Idea => ({ id: i.id, title: i.title, note: i.note, status: i.status, author: i.author_id, pinned: i.pinned, imagePath: i.image_path ?? undefined })),
     watch: r.watch_entries.map((w): WatchItem => ({
@@ -48,8 +49,15 @@ export function toSnapshot(r: Rows, now = Date.now()): Snapshot {
     })),
     quotes: r.quotes.map((q) => ({ id: q.id, slot: q.slot, text: q.body, author: q.author ?? undefined, source: q.source ?? undefined, favorite: q.favorite })),
     weekly: r.weekly[0] ? { day: r.weekly[0].day, ...(r.weekly[0].payload as WeeklyPayload) } : undefined,
+    moments: momentsOf(r),
     syncedAt: now,
   }
+}
+
+/** Media rows not attached to a dream or idea are Moments (the TV only ever receives rows marked Show on TV). */
+function momentsOf(r: Rows): Moment[] {
+  const attached = new Set([...r.dreams.map((d) => d.image_path), ...r.ideas.map((i) => i.image_path)].filter(Boolean))
+  return (r.media ?? []).filter((m) => !attached.has(m.path)).map((m) => ({ path: m.path, takenOn: m.taken_on ?? undefined, caption: m.caption ?? undefined }))
 }
 
 /**
@@ -69,6 +77,6 @@ export function normalizeSnapshot(raw: unknown): Snapshot | null {
       prefs: resolvePrefs(h.prefs, arr(s.dreams)),
     },
     events: arr(s.events), tasks: arr(s.tasks), dreams: arr(s.dreams), notes: arr(s.notes), ideas: arr(s.ideas), watch: arr(s.watch),
-    quotes: arr(s.quotes), weekly: s.weekly, syncedAt: typeof s.syncedAt === 'number' ? s.syncedAt : Date.now(),
+    quotes: arr(s.quotes), weekly: s.weekly, moments: arr(s.moments), syncedAt: typeof s.syncedAt === 'number' ? s.syncedAt : Date.now(),
   }
 }
