@@ -20,9 +20,11 @@ export const emptySnapshot = (tz = 'Asia/Kolkata'): Snapshot => ({
 })
 
 // Shown until the household pins its own. IDs are unverified until the on-TV gate.
-export const DEFAULT_APPS: PinnedApp[] = [
+export const CANDIDATE_APPS: PinnedApp[] = [
   { id: 'netflix', label: 'Netflix', verified: false }, { id: 'youtube.leanback.v4', label: 'YouTube', verified: false },
   { id: 'amazon', label: 'Prime Video', verified: false }, { id: 'com.webos.app.hdmi1', label: 'HDMI 1', verified: false },
   { id: 'com.webos.app.hdmi2', label: 'HDMI 2', verified: false }, { id: 'com.designinnsaeit.vtvsleep', label: 'V/TV Sleep', verified: false },
 ]
-export const appsOf = (s: Snapshot): PinnedApp[] => (s.household.pinnedApps.length ? s.household.pinnedApps : DEFAULT_APPS)
+/** The launch strip shows at most 6 (design-system.md). Until the household chooses, the first 6 candidates. */
+export const DEFAULT_STRIP = (): PinnedApp[] => CANDIDATE_APPS.slice(0, 6)
+export const appsOf = (s: Snapshot): PinnedApp[] => (s.household.pinnedApps.length ? s.household.pinnedApps : DEFAULT_STRIP())

@@ -4,7 +4,7 @@ import { Crud } from './Crud'
 import { ENTITIES } from './entities'
 import { supabaseConfigured } from '../shared/supabase'
 import { buildExport, previewCounts, remapImport, TABLES, type ExportFile } from '../shared/exportImport'
-import { DEFAULT_APPS } from '../shared/model'
+import { CANDIDATE_APPS } from '../shared/model'
 
 const qs = new URLSearchParams(location.search)
 const errMsg = (x: unknown) => (x instanceof Error ? x.message : String(x))
@@ -82,7 +82,7 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
       <button className="pbtn" onClick={async () => { try { const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=5`); setHits(((await r.json()).results ?? [])) } catch { setMsg('City search unavailable.') } }}>Search</button></div>
     {hits.map((x) => <button key={`${x.latitude}${x.longitude}`} className="item" onClick={() => { void patchSettings({ city: x.name, lat: x.latitude, lon: x.longitude, region: x.country_code }); setHits([]) }}>{x.name}{x.admin1 ? `, ${x.admin1}` : ''} · {x.country_code}</button>)}
     <h2>TV launch strip</h2><div className="dim">Unverified until tested on your TV.</div>
-    {DEFAULT_APPS.map((a) => <label className="chk" key={a.id}><input type="checkbox" checked={pinned.some((p) => p.id === a.id)} onChange={(e) => void patchSettings({ pinnedApps: e.target.checked ? [...pinned, a] : pinned.filter((p) => p.id !== a.id) })} />{a.label}</label>)}
+    {CANDIDATE_APPS.map((a) => <label className="chk" key={a.id}><input type="checkbox" checked={pinned.some((p) => p.id === a.id)} onChange={(e) => void patchSettings({ pinnedApps: e.target.checked ? [...pinned, a] : pinned.filter((p) => p.id !== a.id) })} />{a.label}</label>)}
     <h2>Invite your partner</h2><div className="row"><button className="pbtn" onClick={async () => { try { setInvite(`${location.origin}/?token=${await createInvite(hh)}`) } catch (x) { setMsg(errMsg(x)) } }}>Create invite link</button></div>
     {invite && <div className="item"><span className="sub">Send this once. It works for 7 days and one person.</span><span style={{ wordBreak: 'break-all' }}>{invite}</span></div>}
     <h2>Backup</h2><div className="row"><button className="pbtn" onClick={() => void doExport()}>Export household</button>

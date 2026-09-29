@@ -7,6 +7,7 @@ import { localDate } from '../shared/daily'
 import { upcoming } from '../shared/upcoming'
 import { explainEmpty, pickForUs, topMatches, type Candidate, type Filters } from '../shared/picker'
 import { appsOf, type WatchItem } from '../shared/model'
+import { appForService } from '../shared/launch'
 import qrcode from 'qrcode-generator'
 
 export const NAV: { id: Screen; label: string }[] = [
@@ -51,7 +52,7 @@ export function Nav() {
 }
 
 export function OurHome() {
-  const { snap, now, tz, mode, guest, setOverlay, go, platform } = useApp()
+  const { snap, now, tz, mode, guest, setOverlay, go, launch } = useApp()
   const [skipped, setSkipped] = useState(false)
   const date = localDate(now, tz)
   const slot = mode === 'evening' ? 'evening' : 'morning'
@@ -95,13 +96,13 @@ export function OurHome() {
       </div>
     </div>
     <div className="strip">
-      {appsOf(snap).slice(0, 6).map((a) => <Btn key={a.id} id={`app-${a.id}`} onClick={() => platform.launchApp(a.id)}>{a.label}</Btn>)}
+      {appsOf(snap).slice(0, 6).map((a) => <Btn key={a.id} id={`app-${a.id}`} onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}
     </div>
   </>
 }
 
 function Detail({ item, onClose }: { item: WatchItem; onClose: () => void }) {
-  const { snap, platform } = useApp()
+  const { snap, launch } = useApp()
   useLayer('detail', true, onClose)
   const e = item.entry
   return (
@@ -111,7 +112,7 @@ function Detail({ item, onClose }: { item: WatchItem; onClose: () => void }) {
       <p>{e.summary}</p>
       <div className="presets">{snap.household.people.map((p) => <span key={p.id} className={`pill ${item.prefs[p.id] ?? ''}`}>{p.name}: {item.prefs[p.id] ?? 'no vote'}</span>)}</div>
       <div className="presets">
-        <Btn id="d-open" scope="detail" initial className="primary" onClick={() => e.service && platform.launchApp(e.service.toLowerCase())}>Open app</Btn>
+        <Btn id="d-open" scope="detail" initial className="primary" onClick={() => { const a = appForService(e.service); void (a ? launch(a.id, a.label) : launch('', e.service ?? 'this service')) }}>Open app</Btn>
         <Btn id="d-close" scope="detail" className="ghost" onClick={onClose}>Back</Btn>
       </div>
       <div className="credit">Availability hints may be out of date. Data from TMDB · Provider data from JustWatch. This product uses the TMDB API but is not endorsed or certified by TMDB.</div>

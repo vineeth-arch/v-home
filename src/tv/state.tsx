@@ -4,6 +4,7 @@ import { emptySnapshot, type Snapshot } from '../shared/model'
 import { DEFAULT_WINDOWS, resolveMode, shouldApplyScheduledMode, type Mode } from '../shared/modes'
 import { createPlatform, type Platform } from '../adapters/platform'
 import { supabaseConfigured } from '../shared/supabase'
+import { launchFailure } from '../shared/launch'
 import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
@@ -20,6 +21,8 @@ export interface AppState {
   toggleTask(id: string): void
   weather: WeatherView | null
   live: Live | null // null = simulation (fixtures)
+  launch(id: string, label: string): Promise<void>
+  toast: string | null
 }
 const Ctx = createContext<AppState | null>(null)
 export const useApp = () => useContext(Ctx)!
@@ -58,6 +61,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [timerState, setTimerState] = useState<TimerState | 'unavailable'>('unavailable')
   const lastInput = useRef(Date.now())
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const launch = useCallback(async (id: string, label: string) => {
+    const m = launchFailure(await platform.launchApp(id), label)
+    if (m) { setToast(m); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 4000) }
+  }, [platform])
 
   const tz = snap.household.tz
   const liveWeather = useWeather(isLive ? snap.household.lat : undefined, isLive ? snap.household.lon : undefined, snap.household.tz, now)
@@ -94,7 +103,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [isLive, live, snap.tasks])
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, overlay, setOverlay,
-    platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null,
+    platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

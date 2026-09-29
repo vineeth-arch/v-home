@@ -7,7 +7,7 @@ import { MorningRitual, BedtimeRitual } from './rituals'
 const TITLES: Record<Exclude<Screen, 'home'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', settings: 'Settings' }
 
 export function App() {
-  const { screen, go, overlay, setOverlay, live } = useApp()
+  const { screen, go, overlay, setOverlay, live, toast } = useApp()
   useLayer('nav:screen', screen !== 'home', () => go('home'))
   const close = () => setOverlay(null)
   if (live && live.status !== 'ready') return <PairingGate />
@@ -22,6 +22,7 @@ export function App() {
         {screen === 'settings' && <Settings />}
       </div>
       {live?.offline && <div className="offline">Showing saved content{live.snapshot ? ` from ${new Date(live.snapshot.syncedAt).toLocaleTimeString()}` : ''}. Reconnecting…</div>}
+      {toast && <div className="toast" role="status">{toast}</div>}
       <Nav />
       {overlay === 'quick' && <QuickControls onClose={close} />}
       {overlay === 'morning' && <MorningRitual onClose={close} />}
