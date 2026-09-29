@@ -1,0 +1,13 @@
+{
+  "id": "com.designinnsaeit.vhome",
+  "version": "0.1.0",
+  "vendor": "Design Inn Saeit",
+  "type": "web",
+  "main": "index.html",
+  "title": "V/HOME",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "requiredPermissions": ["applications.operation"]
+}

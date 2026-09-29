@@ -1,0 +1,8 @@
+node_modules
+dist
+dist-tv
+build
+.env*
+supabase/.temp
+.DS_Store
+*.zip
