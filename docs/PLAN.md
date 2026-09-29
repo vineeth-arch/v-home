@@ -393,5 +393,10 @@ Optional parallel split: 5.1 and 5.2 share no files.
 - **B.** Vercel project link, preview deploy, then approval for the production deploy.
 - **C.** Every physical TV step, only after LGTV step 10 closes. Route (c) needs separate approval.
 
-## Blocked / next action
+## Cloud (project kqmiuhnaeoshjynsttwa) status
+- 5 migrations applied. Auth: anonymous sign-in ON, email confirmation OFF, site URL https://v-home-psi.vercel.app. Public reads return 401.
+- Vercel env set (URL, publishable key, phone URL). Rotate the DB password (it was shared in chat).
+- `supabase config push` applies without prompting and also pushes local mfa/email defaults, so keep config.toml aligned with remote.
+
+## Blocked / next action (superseded: a git-ignored .env.local now exists via `vercel link`, pointing at the cloud project)
 - Live E2E needs `.env.local` (git-ignored) with `VITE_SUPABASE_URL=http://127.0.0.1:55321`, the local publishable key from `supabase status`, `VITE_PHONE_URL=http://localhost:5173`. The assistant's attempt to generate it was denied by the sandbox; the user must create it or approve.
