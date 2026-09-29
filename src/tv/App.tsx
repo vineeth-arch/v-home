@@ -4,8 +4,9 @@ import { useLayer } from './FocusProvider'
 import { QuickControls } from './QuickControls'
 import { MorningRitual, BedtimeRitual } from './rituals'
 import { Ambient } from './Ambient'
+import { Studio } from './Studio'
 
-const TITLES: Record<Exclude<Screen, 'home'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', apps: 'Apps', settings: 'Settings' }
+const TITLES: Record<Exclude<Screen, 'home'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', apps: 'Apps', settings: 'Settings', studio: 'Studio' }
 
 export function App() {
   const { screen, go, overlay, setOverlay, live, toast } = useApp()
@@ -22,6 +23,7 @@ export function App() {
         {screen === 'ideas' && <Ideas />}
         {screen === 'apps' && <Apps />}
         {screen === 'settings' && <Settings />}
+        {screen === 'studio' && <Studio />}
       </div>
       {live?.offline && <div className="offline">Showing saved content{live.snapshot ? ` from ${new Date(live.snapshot.syncedAt).toLocaleTimeString()}` : ''}. Reconnecting…</div>}
       {toast && <div className="toast" role="status">{toast}</div>}

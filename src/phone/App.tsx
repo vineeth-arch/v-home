@@ -11,6 +11,7 @@ import { sanitizeCustomApps } from '../shared/apps'
 import { Reflections } from './Reflections'
 import { Weekly } from './Weekly'
 import { Moments } from './Moments'
+import { StudioSettings } from './StudioSettings'
 import { TmdbSearch, refreshAvailability } from './TmdbSearch'
 import { ideaToDream, ideaToTask } from '../shared/convert'
 
@@ -124,6 +125,7 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
     <h2>More apps</h2><MoreApps apps={sanitizeCustomApps(h.settings.customApps)} onChange={(next) => void patchSettings({ customApps: next })} />
     <h2>TV layout</h2><div className="dim">The layout stays fixed. These tune it.</div>
     <TvLayout key={h.revision} raw={h.settings.tv} dreams={dreams} onSave={(tv) => patchSettings({ tv })} />
+    <StudioSettings key={`studio-${h.revision}`} raw={h.settings.studio} onSave={(studio) => patchSettings({ studio })} />
     <h2>Invite your partner</h2><div className="row"><button className="pbtn" onClick={async () => { try { setInvite(`${location.origin}/?token=${await createInvite(hh)}`) } catch (x) { setMsg(errMsg(x)) } }}>Create invite link</button></div>
     {invite && <div className="item"><span className="sub">Send this once. It works for 7 days and one person.</span><span style={{ wordBreak: 'break-all' }}>{invite}</span></div>}
     <h2>Backup</h2><div className="row"><button className="pbtn" onClick={() => void doExport()}>Export household</button>

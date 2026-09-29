@@ -26,4 +26,6 @@ TV: LG 43NU885BPLA, firmware 43.04.26, webOS SDK 11.0.1. Installed as `com.desig
 | TMDB search (needs TMDB token set by owner) | NOT VERIFIED with real TMDB | function deployed; auth paths tested (401/403/503) |
 | Ambient photo frame on the TV (crossfade smoothness) | NOT VERIFIED | works in the local preview (2026-09-30): on-this-day photo first, crossfade to the next after 45 s |
 | Screensaver veto while the photo frame is open (`registerScreenSaverRequest`) | NOT VERIFIED | best effort; needs a TV test |
+| Installed-app list on the Apps screen (`listLaunchPoints` from the web app) | NOT VERIFIED | built 2026-09-30; falls back to the curated list if denied |
+| Studio (business numbers) end to end | VERIFIED locally only | local fixtures 2026-09-30: sync, throttle, failed source kept as stale, names hidden until enabled, TV start screen; cloud needs Vineeth's read-only roles and secrets (docs/STUDIO.md) |
 | Volume, mute, picture controls | NOT SUPPORTED in UI | hidden until verified |

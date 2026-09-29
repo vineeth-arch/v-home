@@ -8,15 +8,16 @@ import { launchFailure } from '../shared/launch'
 import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
 import { resolvePrefs } from '../shared/prefs'
+import { studioVisible } from '../../supabase/functions/_shared/studio'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
-export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'apps' | 'settings'
+export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'apps' | 'settings' | 'studio'
 export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing' | 'ambient'
 
 export interface AppState {
   snap: Snapshot; tz: string; now: Date; mode: Mode; manualMode: Mode | null; setManualMode(m: Mode | null): void
   guest: boolean; setGuest(g: boolean): void
-  screen: Screen; go(s: Screen): void
+  screen: Screen; go(s: Screen): void; studioOn: boolean
   overlay: Overlay; setOverlay(o: Overlay): void
   platform: Platform; ctrl: TimerController; timerState: TimerState | 'unavailable'; refreshTimer(): Promise<void>
   toggleTask(id: string): void
@@ -58,6 +59,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const base = q.has('empty') ? emptySnapshot() : fixtureSnapshot()
     // ?prefs={"showForUs":false} previews display preferences in simulation
     try { const raw = q.get('prefs'); if (raw) base.household.prefs = resolvePrefs(JSON.parse(raw), base.dreams) } catch { /* ignore bad JSON */ }
+    // ?studio=1 previews Studio at any hour
+    if (q.has('studio')) base.studio.settings.window = { days: [1, 2, 3, 4, 5, 6, 7], start: 0, end: 1439 }
     return base
   })
   const snap = isLive ? live.snapshot ?? emptySnapshot() : simSnap
@@ -74,6 +77,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [timerState, setTimerState] = useState<TimerState | 'unavailable'>('unavailable')
   const lastInput = useRef(Date.now())
+  const bootAt = useRef(lastInput.current) // unchanged until the first key press
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const launch = useCallback(async (id: string, label: string) => {
@@ -96,6 +100,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const scheduled = resolveMode(now, tz, windows)
     if (shouldApplyScheduledMode(applied, scheduled, { screen, ritualActive: overlay === 'morning' || overlay === 'bedtime', idleMs: Date.now() - lastInput.current })) setApplied(scheduled)
   }, [now, tz, windows, applied, screen, overlay])
+  // Studio: only on work days in the work window, never for guests. It becomes the start screen once, when the app
+  // opens inside the window; it never takes the screen mid-session, and leaves only after a minute without input.
+  const studioOn = studioVisible(snap.studio.settings, now, tz, guest)
+  const startedStudio = useRef(false)
+  useEffect(() => { // "when the app opens": no key pressed yet and within 2 min of launch (a cached snapshot may arrive first)
+    if (startedStudio.current || !studioOn) return
+    startedStudio.current = true
+    if (screen === 'home' && lastInput.current === bootAt.current && Date.now() - bootAt.current < 120_000) setScreen('studio')
+  }, [studioOn, screen])
+  useEffect(() => { if (screen === 'studio' && !studioOn && (guest || Date.now() - lastInput.current >= 60_000)) setScreen('home') }, [now, screen, studioOn, guest])
   useEffect(() => { // photo frame after N idle minutes on Our Home (0 = never)
     const n = prefs.ambientAfterMin
     if (n > 0 && overlay === null && screen === 'home' && Date.now() - lastInput.current >= n * 60_000) setOverlay('ambient')
@@ -119,7 +133,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSnap((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }))
   }, [isLive, live, snap.tasks])
   const value: AppState = {
-    snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, overlay, setOverlay,
+    snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, studioOn, overlay, setOverlay,
     platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast, images: isLive ? live.images : {},
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

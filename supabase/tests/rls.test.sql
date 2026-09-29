@@ -1,5 +1,5 @@
 begin;
-select plan(48);
+select plan(51);
 
 -- identities -------------------------------------------------------------
 insert into auth.users (id, aud, role, email, is_anonymous) values
@@ -161,6 +161,16 @@ insert into public.members (household_id, user_id, role, display_name) values (c
 select pg_temp.act_as('00000000-0000-0000-0000-000000007002', true);
 select lives_ok($$select public.display_unpair()$$, 'TV unpairs itself');
 select is(public.pairing_status(), null::uuid, 'unpaired TV has no household');
+
+-- Studio metrics: household reads, nobody writes, other households see nothing ---------------
+reset role;
+insert into public.business_metrics (household_id, key, source, label, value) values (current_setting('t.hh1')::uuid, 'invoices_open_count', 'invoices', 'Unpaid invoices', 3);
+select pg_temp.act_as('00000000-0000-0000-0000-00000000a11c');
+select is((select count(*) from public.business_metrics)::int, 1, 'a member reads Studio metrics');
+select throws_ok($$insert into public.business_metrics (household_id, key, source, label, value) values (current_setting('t.hh1')::uuid, 'x', 'x', 'x', 1)$$, '42501', null, 'a member cannot write Studio metrics');
+select pg_temp.act_as('00000000-0000-0000-0000-00000000ca01');
+select is((select count(*) from public.business_metrics)::int, 0, 'another household sees no Studio metrics');
+reset role;
 
 -- anon role (no login) ----------------------------------------------------
 reset role;

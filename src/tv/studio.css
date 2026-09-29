@@ -1,0 +1,10 @@
+.studio { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 20px; padding-bottom: 20px; }
+.studio-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.studio-tile { display: flex; flex-direction: column; gap: 6px; min-height: 150px; padding: 22px 30px; justify-content: flex-end; }
+.studio-tile .n { font-family: var(--serif); font-size: 64px; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.studio-tile .l { font-size: var(--fs-small); color: var(--text-dim); }
+.studio-tile.attn .n { color: var(--amber); }
+.studio-tile.stale { opacity: .7; }
+.studio-next { flex: 1; min-height: 0; overflow: hidden; padding-top: 18px; padding-bottom: 12px; }
+.studio-next .row { padding: 8px 0; }
+.studio-next .asof { float: right; letter-spacing: 0; text-transform: none; font-weight: 400; }

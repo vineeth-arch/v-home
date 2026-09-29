@@ -2,6 +2,7 @@ import type { Dream, EventItem, Idea, Moment, NoteItem, Snapshot, TaskItem, Watc
 import { resolvePrefs } from './prefs'
 import { sanitizeCustomApps } from './apps'
 import type { WeeklyPayload } from './week'
+import { DEFAULT_STUDIO, resolveStudio } from '../../supabase/functions/_shared/studio'
 
 /** Raw rows as returned by the TV-scoped selects. Column names match the DB. */
 export interface Rows {
@@ -13,6 +14,7 @@ export interface Rows {
   tasks: { id: string; title: string; owner: string; kind: 'task' | 'grocery'; done: boolean }[]
   notes: { id: string; body: string; author_id: string; to_user?: string | null; created_at?: string }[]
   media?: { path: string; taken_on: string | null; caption: string | null }[]
+  business_metrics?: { key: string; source: string; label: string; value: number | string | null; detail: Record<string, unknown> | null; ok: boolean; fetched_at: string }[]
   dreams: { id: string; title: string; why: string; affirmation: string; next_step: string; target_date: string | null; art: string; image_path?: string | null }[]
   ideas: { id: string; title: string; note: string; status: Idea['status']; author_id: string; pinned: boolean; image_path?: string | null }[]
   watch_entries: { id: string; title: string; type: 'movie' | 'series'; runtime_min: number | null; service: string | null; mood: string | null; summary: string | null; watched: boolean; providers: Record<string, string[]>; providers_updated_at: string | null; poster_path?: string | null }[]
@@ -50,6 +52,7 @@ export function toSnapshot(r: Rows, now = Date.now()): Snapshot {
     quotes: r.quotes.map((q) => ({ id: q.id, slot: q.slot, text: q.body, author: q.author ?? undefined, source: q.source ?? undefined, favorite: q.favorite })),
     weekly: r.weekly[0] ? { day: r.weekly[0].day, ...(r.weekly[0].payload as WeeklyPayload) } : undefined,
     moments: momentsOf(r),
+    studio: { settings: resolveStudio(st.studio), metrics: (r.business_metrics ?? []).map((b) => ({ key: b.key, source: b.source, label: b.label, value: b.value === null ? null : Number(b.value), detail: b.detail ?? {}, ok: b.ok, fetchedAt: b.fetched_at })) },
     syncedAt: now,
   }
 }
@@ -77,6 +80,7 @@ export function normalizeSnapshot(raw: unknown): Snapshot | null {
       prefs: resolvePrefs(h.prefs, arr(s.dreams)),
     },
     events: arr(s.events), tasks: arr(s.tasks), dreams: arr(s.dreams), notes: arr(s.notes), ideas: arr(s.ideas), watch: arr(s.watch),
-    quotes: arr(s.quotes), weekly: s.weekly, moments: arr(s.moments), syncedAt: typeof s.syncedAt === 'number' ? s.syncedAt : Date.now(),
+    quotes: arr(s.quotes), weekly: s.weekly, moments: arr(s.moments),
+    studio: s.studio && typeof s.studio === 'object' ? { settings: resolveStudio(s.studio.settings), metrics: arr(s.studio.metrics) } : { settings: DEFAULT_STUDIO, metrics: [] }, syncedAt: typeof s.syncedAt === 'number' ? s.syncedAt : Date.now(),
   }
 }

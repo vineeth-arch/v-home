@@ -3,6 +3,7 @@ import type { Snapshot } from './model'
 import { DEFAULT_PREFS } from './prefs'
 import { localDate } from './daily'
 import { mondayOf } from './week'
+import { DEFAULT_STUDIO } from '../../supabase/functions/_shared/studio'
 
 const day = (offset: number, hhmm: string) => {
   // date in the household timezone (IST): using the UTC date shifts "tomorrow" between 00:00 and 05:30 IST
@@ -61,7 +62,22 @@ export const fixtureSnapshot = (): Snapshot => ({
   ],
   quotes: [],
   weekly: { day: mondayOf(localDate(new Date(), 'Asia/Kolkata')), eventId: 'e3', taskId: 't1', dateNight: { day: 'Saturday', ideaId: 'i2' } },
-  moments: [], syncedAt: Date.now(),
+  moments: [],
+  studio: {
+    settings: { ...DEFAULT_STUDIO, enabled: true },
+    metrics: ([
+      ['invoices.invoices_open_count', 'invoices', 'Unpaid invoices', 4, {}],
+      ['invoices.invoices_open_total', 'invoices', 'Waiting to be paid', 186400, { unit: 'INR' }],
+      ['invoices.invoices_overdue', 'invoices', 'Past their due date', 1, { attention: true }],
+      ['outreach.followups_now', 'outreach', 'Follow-ups due now', 2, { attention: true }],
+      ['outreach.followups_week', 'outreach', 'Follow-ups this week', 5, {}],
+      ['outreach.leads_open', 'outreach', 'Leads in play', 9, { byStage: { Contacted: 4, 'In Conversation': 3, 'Call Booked': 2 } }],
+      ['outreach.followups_next', 'outreach', 'Next follow-ups', 3, { items: [{ due: day(0, '00:00').slice(0, 10), stage: 'In Conversation' }, { due: day(1, '00:00').slice(0, 10), stage: 'Contacted' }, { due: day(2, '00:00').slice(0, 10), stage: 'Call Booked' }] }],
+      ['forms.forms_with_clients', 'forms', 'Questionnaires with clients', 3, {}],
+      ['forms.forms_to_review', 'forms', 'Answers to review', 1, { attention: true }],
+    ] as const).map(([key, source, label, value, detail]) => ({ key, source, label, value, detail: detail as Record<string, unknown>, ok: true, fetchedAt: new Date().toISOString() })),
+  },
+  syncedAt: Date.now(),
 })
 
 export const fixtureWeather = { tempC: 27, hiC: 31, loC: 24, rainPct: 20, tomorrow: { hiC: 30, loC: 24, rainPct: 40 }, label: 'Partly cloudy' }

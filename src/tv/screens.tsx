@@ -44,12 +44,12 @@ export function Header({ title }: { title?: string }) {
 }
 
 export function Nav() {
-  const { screen, go, timerState, now, tz } = useApp()
+  const { screen, go, timerState, now, tz, studioOn } = useApp()
   const line = timerState === 'unavailable' ? 'Timer status unavailable'
     : timerState.scheduled ? `TV off at ${fmtTime(timerState.shutdownAt, tz)} · ${Math.max(0, Math.ceil((timerState.shutdownAt - now.getTime()) / 60000))} min` : 'No timer'
   return (
     <div className="nav">
-      {NAV.map((n) => <Btn key={n.id} id={`nav-${n.id}`} className={screen === n.id ? 'cur' : ''} onClick={() => go(n.id)}>{n.label}</Btn>)}
+      {(studioOn ? [...NAV, { id: 'studio' as const, label: 'Studio' }] : NAV).map((n) => <Btn key={n.id} id={`nav-${n.id}`} className={screen === n.id ? 'cur' : ''} onClick={() => go(n.id)}>{n.label}</Btn>)}
       <span className="timer-line">{line}</span>
     </div>
   )

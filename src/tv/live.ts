@@ -9,7 +9,7 @@ import type { Snapshot } from '../shared/model'
 import { backoffDelay, shouldIssueCode } from '../shared/pairing'
 
 export type LiveStatus = 'booting' | 'pairing' | 'ready'
-export interface Live { images: Record<string, string>; status: LiveStatus; code: string | null; snapshot: Snapshot | null; offline: boolean; cacheBackend: string; unpair(): Promise<void>; completeTask(id: string): Promise<void>; markWatched(id: string): Promise<void> }
+export interface Live { syncStudio(): Promise<void>; images: Record<string, string>; status: LiveStatus; code: string | null; snapshot: Snapshot | null; offline: boolean; cacheBackend: string; unpair(): Promise<void>; completeTask(id: string): Promise<void>; markWatched(id: string): Promise<void> }
 
 /** Signed URLs live in memory only (they expire after an hour). Offline or unsigned photos fall back to the cached blob. */
 async function resolveImages(c: SupabaseClient, paths: string[], cache: ReturnType<typeof createImageCache>, made: string[]): Promise<Record<string, string>> {
@@ -36,7 +36,7 @@ const q = async <T,>(p: PromiseLike<{ data: T | null; error: { message: string }
 }
 
 async function fetchRows(c: SupabaseClient, hh: string): Promise<Rows> {
-  const [household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly, media] = await Promise.all([
+  const [household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly, media, business_metrics] = await Promise.all([
     q(c.from('households').select('id,name,timezone,settings').eq('id', hh).single()),
     q(c.from('members').select('user_id,role,display_name').eq('household_id', hh)),
     q(c.from('events').select('id,title,starts_at,all_day').order('starts_at')),
@@ -49,8 +49,9 @@ async function fetchRows(c: SupabaseClient, hh: string): Promise<Rows> {
     q(c.from('quotes').select('id,slot,body,author,source,favorite').eq('hidden', false)),
     q(c.from('ritual_selections').select('day,payload').eq('slot', 'weekly').order('day', { ascending: false }).limit(1)),
     q(c.from('media').select('path,taken_on,caption').eq('show_on_tv', true).order('created_at', { ascending: false }).limit(200)),
+    q(c.from('business_metrics').select('key,source,label,value,detail,ok,fetched_at').order('key')),
   ])
-  return { household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly, media } as unknown as Rows
+  return { household, members, events, tasks, notes, dreams, ideas, watch_entries, watch_prefs, quotes, weekly, media, business_metrics } as unknown as Rows
 }
 
 /** TV lifecycle: anonymous session, pairing, cached-first render, versioned sync, revoke handling. */
@@ -152,5 +153,7 @@ export function useLive(enabled: boolean): Live {
   }, [run])
   const completeTask = useCallback(async (id: string) => { await getClient().rpc('tv_complete_task', { p_id: id }); engineRef.current?.nudge() }, [])
   const markWatched = useCallback(async (id: string) => { await getClient().rpc('tv_mark_watched', { p_id: id }); engineRef.current?.nudge() }, [])
-  return { images, status, code, snapshot, offline, cacheBackend, unpair, completeTask, markWatched }
+  // Ask the server to refresh Studio numbers; it throttles (15 min for a TV) and bumps the version when rows change.
+  const syncStudio = useCallback(async () => { try { await getClient().functions.invoke('business-sync', { body: {} }); engineRef.current?.nudge() } catch { /* the TV keeps showing "as of" */ } }, [])
+  return { images, status, code, snapshot, offline, cacheBackend, unpair, completeTask, markWatched, syncStudio }
 }

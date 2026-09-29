@@ -1,3 +1,4 @@
+import { DEFAULT_STUDIO, type StudioSettings } from '../../supabase/functions/_shared/studio'
 import type { Pref, WatchEntry } from './picker'
 import { DEFAULT_PREFS, type TvPrefs } from './prefs'
 import type { Reflection } from './reflections'
@@ -14,16 +15,20 @@ export interface Moment { path: string; takenOn?: string; caption?: string }
 export interface Idea { id: string; title: string; note: string; status: 'new' | 'discuss' | 'planned' | 'archived'; author: string; pinned?: boolean; imagePath?: string }
 export interface WatchItem { entry: WatchEntry & { summary?: string; posterPath?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
 
+/** One Studio number (aggregate only). key is '<source>.<metric>'. */
+export interface StudioMetric { key: string; source: string; label: string; value: number | null; detail: Record<string, unknown>; ok: boolean; fetchedAt: string }
+
 export interface Snapshot {
   household: { id: string; name: string; tz: string; hiddenReflections: string[]; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[]; customApps: PinnedApp[]; prefs: TvPrefs }
   events: EventItem[]; tasks: TaskItem[]; dreams: Dream[]; notes: NoteItem[]; ideas: Idea[]; watch: WatchItem[]
   quotes: Reflection[]; weekly?: { day: string } & WeeklyPayload
   moments: Moment[]
+  studio: { settings: StudioSettings; metrics: StudioMetric[] }
   syncedAt: number
 }
 export const emptySnapshot = (tz = 'Asia/Kolkata'): Snapshot => ({
   household: { id: '', name: 'Our Home', tz, hiddenReflections: [], people: [], pinnedApps: [], customApps: [], prefs: DEFAULT_PREFS },
-  events: [], tasks: [], dreams: [], notes: [], ideas: [], watch: [], quotes: [], moments: [], syncedAt: Date.now(),
+  events: [], tasks: [], dreams: [], notes: [], ideas: [], watch: [], quotes: [], moments: [], studio: { settings: DEFAULT_STUDIO, metrics: [] }, syncedAt: Date.now(),
 })
 
 // Shown until the household pins its own. IDs are unverified until the on-TV gate.
