@@ -85,6 +85,8 @@ export class MockTimer implements TimerAdapter {
 export class TimerController {
   needsRefresh = false
   constructor(private a: TimerAdapter) {}
+  get verified() { return this.a.verified }
+  get label() { return this.a.label }
   async refresh() {
     const r = await this.a.status()
     if (r.kind === 'confirmed') this.needsRefresh = false

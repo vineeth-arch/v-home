@@ -26,11 +26,18 @@ export const KEY_BACK = [461, 27, 8]
 export const dirForKey = (code: number): Dir | null =>
   code === 37 ? 'left' : code === 39 ? 'right' : code === 38 ? 'up' : code === 40 ? 'down' : null
 
-/** Layers: root screen, then screens/overlays pushed on top. Back pops; at root returns 'exit'. */
+/** Layers: screens/overlays pushed on top of root. Back pops; at root returns 'exit'.
+ *  Names starting "nav:" are screen layers (do not change focus scope); others are overlays that trap focus. */
+export interface Layer { name: string; onClose?: () => void; saved: string | null }
 export class BackStack {
-  private layers: { name: string; onClose?: () => void }[] = []
-  push(name: string, onClose?: () => void) { this.layers.push({ name, onClose }) }
+  private layers: Layer[] = []
+  push(name: string, onClose?: () => void, saved: string | null = null): Layer {
+    const l = { name, onClose, saved }; this.layers.push(l); return l
+  }
+  remove(l: Layer) { const i = this.layers.indexOf(l); if (i >= 0) this.layers.splice(i, 1) }
   get depth() { return this.layers.length }
+  /** Current focus scope: topmost overlay name, else 'main'. */
+  get scope() { for (let i = this.layers.length - 1; i >= 0; i--) if (!this.layers[i].name.startsWith('nav:')) return this.layers[i].name; return 'main' }
   back(): 'closed' | 'exit' {
     const top = this.layers.pop()
     if (!top) return 'exit'

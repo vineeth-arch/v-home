@@ -21,3 +21,11 @@ test('back closes top layer first then exits at root', () => {
   expect(s.back()).toBe('closed'); expect(s.back()).toBe('closed'); expect(s.back()).toBe('exit')
   expect(log).toEqual(['overlay', 'screen'])
 })
+
+test('overlay layers set focus scope; screen layers do not', () => {
+  const s = new BackStack()
+  expect(s.scope).toBe('main')
+  s.push('nav:watch'); expect(s.scope).toBe('main')
+  const o = s.push('quick'); expect(s.scope).toBe('quick')
+  s.remove(o); expect(s.scope).toBe('main')
+})

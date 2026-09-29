@@ -1,9 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BackStack, KEY_BACK, dirForKey, pickNext, type Box } from './focus'
 
+interface Entry { el: HTMLElement; scope: string }
 interface Ctx {
   focusedId: string | null
-  register(id: string, el: HTMLElement): () => void
+  register(id: string, el: HTMLElement, scope: string, initial: boolean): () => void
   focus(id: string): void
   pushLayer(name: string, onClose?: () => void): () => void
 }
@@ -11,42 +12,52 @@ const FocusCtx = createContext<Ctx | null>(null)
 export const useFocusCtx = () => useContext(FocusCtx)!
 
 export function FocusProvider({ children, onExitRoot = () => window.close() }: { children: ReactNode; onExitRoot?: () => void }) {
-  const els = useRef(new Map<string, HTMLElement>())
+  const els = useRef(new Map<string, Entry>())
   const stack = useRef(new BackStack())
   const [focusedId, setFocused] = useState<string | null>(null)
   const focusedRef = useRef<string | null>(null)
-  const saved = useRef<string | null>(null)
+  const hiddenFocus = useRef<string | null>(null)
 
   const focus = useCallback((id: string) => {
     focusedRef.current = id; setFocused(id)
-    els.current.get(id)?.focus({ preventScroll: true })
+    els.current.get(id)?.el.focus({ preventScroll: true })
   }, [])
 
-  const register = useCallback((id: string, el: HTMLElement) => {
-    els.current.set(id, el)
-    if (focusedRef.current === null) focus(id)
-    return () => { els.current.delete(id); if (focusedRef.current === id) { focusedRef.current = null; setFocused(null) } }
+  const register = useCallback((id: string, el: HTMLElement, scope: string, initial: boolean) => {
+    els.current.set(id, { el, scope })
+    const cur = focusedRef.current ? els.current.get(focusedRef.current) : undefined
+    if (scope === stack.current.scope && (initial || !cur || cur.scope !== scope)) focus(id)
+    return () => {
+      els.current.delete(id)
+      if (focusedRef.current === id) { focusedRef.current = null; setFocused(null) }
+    }
   }, [focus])
 
   const pushLayer = useCallback((name: string, onClose?: () => void) => {
-    stack.current.push(name, onClose)
-    return () => {}
-  }, [])
+    const layer = stack.current.push(name, onClose, focusedRef.current)
+    return () => {
+      stack.current.remove(layer)
+      if (layer.saved && els.current.has(layer.saved)) focus(layer.saved)
+    }
+  }, [focus])
 
   useEffect(() => {
-    const boxes = (): Box[] => [...els.current].map(([id, el]) => { const r = el.getBoundingClientRect(); return { id, x: r.x, y: r.y, w: r.width, h: r.height } })
+    const boxes = (): Box[] => {
+      const sc = stack.current.scope
+      return [...els.current].filter(([, e]) => e.scope === sc).map(([id, e]) => { const r = e.el.getBoundingClientRect(); return { id, x: r.x, y: r.y, w: r.width, h: r.height } })
+    }
     const onKey = (e: KeyboardEvent) => {
       const dir = dirForKey(e.keyCode)
       if (dir) { const n = pickNext(boxes(), focusedRef.current, dir); if (n) focus(n); e.preventDefault(); return }
-      if (e.keyCode === 13) { els.current.get(focusedRef.current ?? '')?.click(); return }
+      if (e.keyCode === 13) { els.current.get(focusedRef.current ?? '')?.el.click(); return }
       if (KEY_BACK.includes(e.keyCode)) {
         e.preventDefault()
         if (stack.current.back() === 'exit') onExitRoot()
       }
     }
     const onVis = () => { // preserve focus when returning from another app
-      if (document.hidden) saved.current = focusedRef.current
-      else if (saved.current && els.current.has(saved.current)) focus(saved.current)
+      if (document.hidden) hiddenFocus.current = focusedRef.current
+      else if (hiddenFocus.current && els.current.has(hiddenFocus.current)) focus(hiddenFocus.current)
     }
     window.addEventListener('keydown', onKey)
     document.addEventListener('visibilitychange', onVis)
@@ -57,17 +68,22 @@ export function FocusProvider({ children, onExitRoot = () => window.close() }: {
   return <FocusCtx.Provider value={value}>{children}</FocusCtx.Provider>
 }
 
-/** Focusable element props: pointer hover syncs to keyboard focus; focus is visible via .focusable[data-focused]. */
-export function useFocusable(id: string) {
-  const ctx = useFocusCtx()
+/** Focusable props. Pointer hover syncs to keyboard focus; ring shown via [data-focused]. */
+export function useFocusable(id: string, opts: { scope?: string; initial?: boolean } = {}) {
+  const { focusedId, register, focus } = useFocusCtx()
   const ref = useRef<HTMLElement | null>(null)
-  const setRef = useCallback((el: HTMLElement | null) => {
-    ref.current = el
-    if (el) ctx.register(id, el)
-  }, [ctx, id])
+  const scope = opts.scope ?? 'main', initial = !!opts.initial
+  useEffect(() => register(id, ref.current!, scope, initial), [register, id, scope, initial])
   return {
-    ref: setRef, tabIndex: -1, className: 'focusable',
-    'data-focused': ctx.focusedId === id || undefined,
-    onMouseEnter: () => ctx.focus(id),
+    ref: ref as never, tabIndex: -1, className: 'focusable',
+    'data-focused': focusedId === id || undefined,
+    onMouseEnter: () => focus(id),
   }
+}
+
+/** Register a Back-stack layer while `active`. Layout effect so it exists before children register. */
+export function useLayer(name: string, active: boolean, onClose: () => void) {
+  const { pushLayer } = useFocusCtx()
+  const cb = useRef(onClose); cb.current = onClose
+  useLayoutEffect(() => (active ? pushLayer(name, () => cb.current()) : undefined), [name, active, pushLayer])
 }

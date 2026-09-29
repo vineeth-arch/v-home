@@ -1,0 +1,66 @@
+import { useState } from 'react'
+import { Btn } from './ui'
+import { useLayer } from './FocusProvider'
+import { useApp } from './state'
+import { useTimerActions } from './timerActions'
+import { SLEEP_APP } from '../adapters/timer'
+import { appsOf } from '../shared/model'
+
+export function ConfirmOff({ onClose }: { onClose: () => void }) {
+  const { ctrl, refreshTimer } = useApp()
+  const [msg, setMsg] = useState('')
+  useLayer('confirm', true, onClose)
+  const off = async () => {
+    const r = await ctrl.mutate((a) => a.powerOff())
+    setMsg(r.kind === 'confirmed' || r.kind === 'handoff' ? 'Turning the TV off…' : 'Could not confirm the request.')
+    refreshTimer()
+  }
+  return (
+    <div className="overlay"><div className="panel" style={{ width: 900 }}>
+      <h2>Turn the TV off now?</h2>
+      <p className="dim">This ends whatever is playing.</p>
+      <div className="presets">
+        <Btn id="off-yes" scope="confirm" className="primary" onClick={off}>Turn TV off</Btn>
+        <Btn id="off-no" scope="confirm" initial onClick={onClose}>Cancel</Btn>
+      </div>
+      <div className="status-msg warn">{msg}</div>
+    </div></div>
+  )
+}
+
+export function QuickControls({ onClose }: { onClose: () => void }) {
+  const { snap, guest, setGuest, platform, timerState, tz } = useApp()
+  const { msg, run, verified } = useTimerActions()
+  const [custom, setCustom] = useState(20)
+  const [confirm, setConfirm] = useState(false)
+  useLayer('quick', !confirm, onClose)
+  const pinned = appsOf(snap)
+  return (
+    <div className="overlay"><div className="panel">
+      <h2>Quick controls</h2>
+      <div className="dim small">
+        {timerState === 'unavailable' ? 'Timer status unavailable' : timerState.scheduled ? `Timer running` : 'No timer'}
+        {!verified && ' · not yet verified on this TV'}
+      </div>
+      <div className="presets">
+        {[30, 45, 60, 90].map((m, i) => <Btn key={m} id={`q-${m}`} scope="quick" initial={i === 0} onClick={() => run((a) => a.schedule(m))}>{m} min</Btn>)}
+      </div>
+      <div className="stepper">
+        <Btn id="q-minus" scope="quick" className="chip" onClick={() => setCustom((c) => Math.max(1, c - 5))}>−5</Btn>
+        <b>{custom} min</b>
+        <Btn id="q-plus" scope="quick" className="chip" onClick={() => setCustom((c) => Math.min(720, c + 5))}>+5</Btn>
+        <Btn id="q-custom" scope="quick" onClick={() => run((a) => a.schedule(custom))}>Set custom</Btn>
+        <Btn id="q-cancel" scope="quick" className="ghost" onClick={() => run((a) => a.cancel())}>Cancel timer</Btn>
+      </div>
+      <div className={`status-msg ${msg?.warn ? 'warn' : ''}`}>{msg?.text}</div>
+      <div className="presets">
+        <Btn id="q-sleepapp" scope="quick" className="ghost" onClick={() => platform.launchApp(SLEEP_APP)}>Open V/TV Sleep</Btn>
+        {pinned.slice(0, 3).map((a) => <Btn key={a.id} id={`q-app-${a.id}`} scope="quick" className="ghost" onClick={() => platform.launchApp(a.id)}>{a.label}</Btn>)}
+        <Btn id="q-guest" scope="quick" className={guest ? 'on' : 'ghost'} onClick={() => { setGuest(!guest); onClose() }}>{guest ? 'End guest view' : 'Guest view'}</Btn>
+        <Btn id="q-off" scope="quick" className="ghost" onClick={() => setConfirm(true)}>TV off now</Btn>
+      </div>
+      <div className="dim small" data-tz={tz}>Volume and picture controls appear only once verified on this TV (see Settings).</div>
+      {confirm && <ConfirmOff onClose={() => setConfirm(false)} />}
+    </div></div>
+  )
+}
