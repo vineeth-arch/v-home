@@ -157,7 +157,7 @@ export function Us() {
   return <>
     <div className="tabs">{tabs.map((t) => <Btn key={t} id={`tab-${t}`} initial={t === 'This Week'} className={`chip ${tab === t ? 'cur' : ''}`} onClick={() => setTab(t)}>{t}</Btn>)}</div>
     <div className="scroll-free list">
-      {tab === 'This Week' && (snap.events.length ? snap.events.map((e) => <div className="card item" key={e.id}><span className="dim" style={{ width: 240 }}>{fmtDay(e.at, tz)}{e.allDay ? '' : ` · ${fmtTime(e.at, tz)}`}</span>{e.title}</div>) : <div className="empty">Nothing planned this week.</div>)}
+      {tab === 'This Week' && (snap.events.length ? snap.events.map((e) => <div className="card item" key={e.id}><span className="dim" style={{ width: 380, whiteSpace: 'nowrap' }}>{fmtDay(e.at, tz)}{e.allDay ? '' : ` · ${fmtTime(e.at, tz)}`}</span>{e.title}</div>) : <div className="empty">Nothing planned this week.</div>)}
       {tab === 'Home Tasks' && snap.tasks.map((t) => (
         <Btn key={t.id} id={`task-${t.id}`} className={`item ${t.done ? 'done' : ''}`} style={{ width: '100%' }} onClick={() => toggleTask(t.id)}>
           <span className="box">{t.done ? '✓' : ''}</span><span className="lbl">{t.title}</span><span className="dim small" style={{ marginLeft: 'auto' }}>{t.kind === 'grocery' ? 'Grocery · ' : ''}{personName(snap, t.owner)}</span>
@@ -177,9 +177,9 @@ export function Ideas() {
   const pages = Math.max(1, Math.ceil(shown.length / 6))
   if (guest) return <div className="card"><div className="guest-note">Guest view: ideas are hidden.</div></div>
   return <>
-    <div className="scroll-free"><div className="grid3">{shown.slice(page * 6, page * 6 + 6).map((i, k) => (
+    <div className="scroll-free"><div className="grid3 fill">{shown.slice(page * 6, page * 6 + 6).map((i, k) => (
       <Btn key={i.id} id={`idea-${i.id}`} initial={k === 0} className="tile">
-        <span className="st">{i.pinned ? '★ ' : ''}{i.status}</span><span className="h">{i.title}</span><span className="dim small">{i.note}</span><span className="dim small">{personName(snap, i.author)}</span>
+        <span className="st">{i.pinned ? '★ ' : ''}{i.status} · {personName(snap, i.author)}</span><span className="h clamp2">{i.title}</span><span className="dim small">{i.note}</span>
       </Btn>))}</div></div>
     {pages > 1 && <div className="presets">
       <Btn id="ideas-prev" className="chip ghost" onClick={() => setPage((p) => (p + pages - 1) % pages)}>Previous</Btn>
@@ -201,7 +201,7 @@ export function Settings() {
   ]
   return <>
     <div className="card">{rows.map(([a, b]) => <div className="row" key={a}><span className="t">{a}</span><span>{b}</span></div>)}</div>
-    <div className="presets"><Btn id="set-unpair" initial className="ghost" onClick={() => setOverlay('pairing')}>Unpair this TV</Btn></div>
+    <div className="presets"><Btn id="set-unpair" className="ghost" onClick={() => setOverlay('pairing')}>Unpair this TV</Btn></div>
   </>
 }
 
