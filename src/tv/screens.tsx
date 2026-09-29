@@ -215,7 +215,7 @@ export function Settings() {
 const phoneUrl = (import.meta.env.VITE_PHONE_URL as string | undefined) ?? 'https://vhome.example'
 
 function PairCard({ code, note, onBack }: { code: string; note: string; onBack?: () => void }) {
-  const svg = useMemo(() => { const q = qrcode(0, 'M'); q.addData(`${phoneUrl}/pair?code=${code}`); q.make(); return q.createSvgTag({ cellSize: 6, margin: 0, scalable: true }) }, [code])
+  const svg = useMemo(() => { const q = qrcode(0, 'M'); q.addData(`${phoneUrl}/?code=${code}`); q.make(); return q.createSvgTag({ cellSize: 6, margin: 0, scalable: true }) }, [code])
   return (
     <div className="panel" style={{ flexDirection: 'row', gap: 60, alignItems: 'center' }}>
       <div><h2>Pair this TV</h2><p className="dim">On your phone, open V/HOME, then Displays, and enter this code or scan the QR.</p><div className="code">{code || '…'}</div>

@@ -5,6 +5,7 @@ import { toSnapshot, type Rows } from '../shared/snapshot'
 import { RevokedError, SyncEngine } from '../shared/sync'
 import { pickStore, type CacheStore } from '../shared/cache'
 import type { Snapshot } from '../shared/model'
+import { backoffDelay, shouldIssueCode } from '../shared/pairing'
 
 export type LiveStatus = 'booting' | 'pairing' | 'ready'
 export interface Live { status: LiveStatus; code: string | null; snapshot: Snapshot | null; offline: boolean; cacheBackend: string; unpair(): Promise<void>; completeTask(id: string): Promise<void>; markWatched(id: string): Promise<void> }
@@ -55,9 +56,9 @@ export function useLive(enabled: boolean): Live {
     if (!alive()) return
     if (!hh) {
       setStatus('pairing'); setSnapshot(null)
-      let issued = 0
+      let current: string | null = null, issued = 0 // loop-local: state from a render closure would be stale
       while (alive() && !hh) {
-        if (!code || Date.now() - issued > 9 * 60_000) { const r = await c.rpc('start_pairing'); if (r.error) throw r.error; setCode(r.data as string); issued = Date.now() }
+        if (shouldIssueCode(current, issued, Date.now())) { const r = await c.rpc('start_pairing'); if (r.error) throw r.error; current = r.data as string; issued = Date.now(); setCode(current) }
         await new Promise((r) => setTimeout(r, 3000))
         hh = await paired()
       }
@@ -78,7 +79,7 @@ export function useLive(enabled: boolean): Live {
       fetchSnapshot: async () => toSnapshot(await fetchRows(c, hh!)),
       onSnapshot: (s) => { setSnapshot(s); setOffline(false); void store.set(s) },
       onOffline: () => setOffline(true),
-      onRevoked: () => { void store.clear(); setSnapshot(null); void boot() },
+      onRevoked: () => { void store.clear(); setSnapshot(null); run() },
     })
     engineRef.current = engine
     engine.start()
@@ -87,13 +88,26 @@ export function useLive(enabled: boolean): Live {
     document.addEventListener('visibilitychange', nudge); addEventListener('online', nudge)
     const stop = () => { engine.stop(); void c.removeChannel(ch); document.removeEventListener('visibilitychange', nudge); removeEventListener('online', nudge) }
     cleanup.current = stop
-  }, [code])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const cleanup = useRef<() => void>(() => {})
+  const runId = useRef(0)
+
+  /** boot with retry, so a TV that starts before Wi-Fi recovers on its own. */
+  const run = useCallback(() => {
+    const my = ++runId.current
+    let attempt = 0
+    const go = () => boot().then(() => { if (runId.current === my) setOffline(false) }).catch(() => {
+      if (runId.current !== my) return
+      setOffline(true)
+      setTimeout(go, backoffDelay(attempt++))
+    })
+    go()
+  }, [boot])
 
   useEffect(() => {
     if (!enabled) return
-    boot().catch(() => setOffline(true))
-    return () => { epoch.current++; cleanup.current(); engineRef.current?.stop() }
+    run()
+    return () => { runId.current++; epoch.current++; cleanup.current(); engineRef.current?.stop() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled])
 
@@ -101,8 +115,8 @@ export function useLive(enabled: boolean): Live {
     const c = getClient()
     cleanup.current(); engineRef.current?.stop()
     await c.rpc('display_unpair'); await storeRef.current?.clear(); await c.auth.signOut()
-    setSnapshot(null); setStatus('booting'); void boot().catch(() => setOffline(true))
-  }, [boot])
+    setSnapshot(null); setStatus('booting'); run()
+  }, [run])
   const completeTask = useCallback(async (id: string) => { await getClient().rpc('tv_complete_task', { p_id: id }); engineRef.current?.nudge() }, [])
   const markWatched = useCallback(async (id: string) => { await getClient().rpc('tv_mark_watched', { p_id: id }); engineRef.current?.nudge() }, [])
   return { status, code, snapshot, offline, cacheBackend, unpair, completeTask, markWatched }
