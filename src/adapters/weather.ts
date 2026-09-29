@@ -1,17 +1,20 @@
 // Open-Meteo (no key). Never guesses a location; caller supplies coordinates from household settings.
-export interface Weather { tempC: number; label: string; hiC: number; loC: number; rainPct: number; tomorrow: { hiC: number; loC: number; rainPct: number }; fetchedAt: number }
+export interface Weather { tempC: number; label: string; hiC: number; loC: number; rainPct: number; tomorrow: { hiC: number; loC: number; rainPct: number }; nextHours?: { time: string; tempC: number; rainPct: number }[]; fetchedAt: number }
 export interface WeatherView extends Weather { stale: boolean; showCurrent: boolean }
 
 export const WMO_LABEL = (c: number): string =>
   c === 0 ? 'Clear' : c <= 2 ? 'Partly cloudy' : c === 3 ? 'Overcast' : c <= 48 ? 'Fog' : c <= 57 ? 'Drizzle' : c <= 67 ? 'Rain' : c <= 77 ? 'Snow' : c <= 82 ? 'Showers' : c <= 86 ? 'Snow showers' : 'Thunderstorm'
 
 export async function fetchWeather(lat: number, lon: number, tz: string, fetchFn: typeof fetch = fetch, now = Date.now()): Promise<Weather> {
-  const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=2&timezone=${encodeURIComponent(tz)}`
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&hourly=temperature_2m,precipitation_probability&forecast_hours=4&forecast_days=2&timezone=${encodeURIComponent(tz)}`
   const r = await fetchFn(u)
   if (!r.ok) throw new Error(`weather ${r.status}`)
   const d = await r.json()
   const day = (i: number) => ({ hiC: Math.round(d.daily.temperature_2m_max[i]), loC: Math.round(d.daily.temperature_2m_min[i]), rainPct: Math.round(d.daily.precipitation_probability_max[i] ?? 0) })
-  return { tempC: Math.round(d.current.temperature_2m), label: WMO_LABEL(d.current.weather_code), ...day(0), tomorrow: day(1), fetchedAt: now }
+  // hourly starts at the current hour; the next three are the useful ones. time is local "YYYY-MM-DDTHH:mm".
+  const h = d.hourly ?? { time: [], temperature_2m: [], precipitation_probability: [] }
+  const nextHours = (h.time as string[]).slice(1, 4).map((time, i) => ({ time, tempC: Math.round(h.temperature_2m[i + 1]), rainPct: Math.round(h.precipitation_probability[i + 1] ?? 0) }))
+  return { tempC: Math.round(d.current.temperature_2m), label: WMO_LABEL(d.current.weather_code), ...day(0), tomorrow: day(1), nextHours, fetchedAt: now }
 }
 
 export const STALE_CURRENT_MS = 6 * 3600_000

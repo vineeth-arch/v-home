@@ -29,7 +29,7 @@ export function ConfirmOff({ onClose }: { onClose: () => void }) {
 }
 
 export function QuickControls({ onClose }: { onClose: () => void }) {
-  const { snap, guest, setGuest, launch, timerState, tz } = useApp()
+  const { snap, guest, setGuest, launch, timerState, tz, setOverlay } = useApp()
   const { msg, run, verified } = useTimerActions()
   const [custom, setCustom] = useState(20)
   const [confirm, setConfirm] = useState(false)
@@ -56,6 +56,7 @@ export function QuickControls({ onClose }: { onClose: () => void }) {
       <div className="presets">
         <Btn id="q-sleepapp" scope="quick" className="ghost" onClick={() => void launch(SLEEP_APP, 'V/TV Sleep')}>Open V/TV Sleep</Btn>
         {pinned.slice(0, 3).map((a) => <Btn key={a.id} id={`q-app-${a.id}`} scope="quick" className="ghost" onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}
+        <Btn id="q-ambient" scope="quick" className="ghost" onClick={() => setOverlay('ambient')}>Photo frame</Btn>
         <Btn id="q-guest" scope="quick" className={guest ? 'on' : 'ghost'} onClick={() => { setGuest(!guest); onClose() }}>{guest ? 'End guest view' : 'Guest view'}</Btn>
         <Btn id="q-off" scope="quick" className="ghost" onClick={() => setConfirm(true)}>TV off now</Btn>
       </div>

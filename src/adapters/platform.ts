@@ -8,6 +8,8 @@ export interface Platform {
   readonly simulated: boolean
   call(uri: string, params: object, timeoutMs?: number): Promise<LunaResult>
   launchApp(id: string, params?: object): Promise<LunaResult>
+  /** Long-lived subscription; every response goes to onMsg. Returns cancel. */
+  subscribe(uri: string, params: object, onMsg: (r: LunaResult) => void): () => void
 }
 
 declare global {
@@ -33,6 +35,15 @@ export class WebOSPlatform implements Platform {
   launchApp(id: string, params: object = {}) {
     return this.call('luna://com.webos.applicationManager/launch', { id, params })
   }
+  subscribe(uri: string, params: object, onMsg: (r: LunaResult) => void) {
+    const bridge = new window.PalmServiceBridge!()
+    bridge.onservicecallback = (msg) => {
+      try { const data = JSON.parse(msg) as Record<string, unknown>; onMsg(data.returnValue === false ? { ok: false, error: String(data.errorText ?? 'error') } : { ok: true, data }) }
+      catch { onMsg({ ok: false, error: 'bad response' }) }
+    }
+    bridge.call(uri, JSON.stringify({ ...params, subscribe: true }))
+    return () => bridge.cancel()
+  }
 }
 
 export class MockPlatform implements Platform {
@@ -43,6 +54,7 @@ export class MockPlatform implements Platform {
     return { ok: true, data: { returnValue: true } }
   }
   launchApp(id: string, params: object = {}) { return this.call('launch', { id, params }) }
+  subscribe(uri: string, params: object) { this.calls.push({ uri, params: { ...params, subscribe: true } }); return () => {} }
 }
 
 export const createPlatform = (): Platform => (window.PalmServiceBridge ? new WebOSPlatform() : new MockPlatform())

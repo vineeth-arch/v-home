@@ -1,12 +1,13 @@
 import { expect, test } from 'vitest'
 import { fetchWeather, loadCached, saveCached, weatherView, WMO_LABEL, type Weather } from './weather'
 
-const payload = { current: { temperature_2m: 30.4, weather_code: 2 }, daily: { temperature_2m_max: [33.2, 32], temperature_2m_min: [26.1, 25.5], precipitation_probability_max: [10, 60] } }
+const payload = { current: { temperature_2m: 30.4, weather_code: 2 }, daily: { temperature_2m_max: [33.2, 32], temperature_2m_min: [26.1, 25.5], precipitation_probability_max: [10, 60] }, hourly: { time: ['2026-09-30T20:00', '2026-09-30T21:00', '2026-09-30T22:00', '2026-09-30T23:00'], temperature_2m: [29.6, 28.9, 28.4, 27.5], precipitation_probability: [5, 10, null, 40] } }
 const ok = (b: unknown) => (async () => ({ ok: true, status: 200, json: async () => b })) as unknown as typeof fetch
 
 test('fresh result maps and rounds', async () => {
   const w = await fetchWeather(19.07, 72.88, 'Asia/Kolkata', ok(payload), 1000)
   expect(w).toMatchObject({ tempC: 30, label: 'Partly cloudy', hiC: 33, loC: 26, rainPct: 10, tomorrow: { hiC: 32, loC: 26, rainPct: 60 }, fetchedAt: 1000 })
+  expect(w.nextHours).toEqual([{ time: '2026-09-30T21:00', tempC: 29, rainPct: 10 }, { time: '2026-09-30T22:00', tempC: 28, rainPct: 0 }, { time: '2026-09-30T23:00', tempC: 28, rainPct: 40 }])
 })
 test('http error throws so caller keeps the cache', async () => {
   await expect(fetchWeather(1, 1, 'UTC', (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch)).rejects.toThrow('500')

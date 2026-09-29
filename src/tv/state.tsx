@@ -11,7 +11,7 @@ import { resolvePrefs } from '../shared/prefs'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
 export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'apps' | 'settings'
-export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing'
+export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing' | 'ambient'
 
 export interface AppState {
   snap: Snapshot; tz: string; now: Date; mode: Mode; manualMode: Mode | null; setManualMode(m: Mode | null): void
@@ -88,14 +88,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { document.documentElement.dataset.mode = mode }, [mode])
   useEffect(() => {
     const bump = () => { lastInput.current = Date.now() }
-    addEventListener('keydown', bump); addEventListener('mousemove', bump)
+    addEventListener('keydown', bump, true); addEventListener('mousemove', bump) // capture: runs even when the photo frame swallows the key
     const id = setInterval(() => setNow(new Date()), 15_000)
-    return () => { removeEventListener('keydown', bump); removeEventListener('mousemove', bump); clearInterval(id) }
+    return () => { removeEventListener('keydown', bump, true); removeEventListener('mousemove', bump); clearInterval(id) }
   }, [])
   useEffect(() => { // scheduled change only when idle on Our Home
     const scheduled = resolveMode(now, tz, windows)
     if (shouldApplyScheduledMode(applied, scheduled, { screen, ritualActive: overlay === 'morning' || overlay === 'bedtime', idleMs: Date.now() - lastInput.current })) setApplied(scheduled)
   }, [now, tz, windows, applied, screen, overlay])
+  useEffect(() => { // photo frame after N idle minutes on Our Home (0 = never)
+    const n = prefs.ambientAfterMin
+    if (n > 0 && overlay === null && screen === 'home' && Date.now() - lastInput.current >= n * 60_000) setOverlay('ambient')
+  }, [now, prefs.ambientAfterMin, overlay, screen])
 
   const refreshTimer = useCallback(async () => {
     const r = await ctrl.refresh()

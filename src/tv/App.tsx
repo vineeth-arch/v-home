@@ -3,6 +3,7 @@ import { useApp, type Screen } from './state'
 import { useLayer } from './FocusProvider'
 import { QuickControls } from './QuickControls'
 import { MorningRitual, BedtimeRitual } from './rituals'
+import { Ambient } from './Ambient'
 
 const TITLES: Record<Exclude<Screen, 'home'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', apps: 'Apps', settings: 'Settings' }
 
@@ -29,6 +30,7 @@ export function App() {
       {overlay === 'morning' && <MorningRitual onClose={close} />}
       {overlay === 'bedtime' && <BedtimeRitual onClose={close} />}
       {overlay === 'pairing' && <Pairing onClose={close} />}
+      {overlay === 'ambient' && <Ambient onClose={close} />}
     </div>
   )
 }

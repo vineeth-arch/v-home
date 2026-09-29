@@ -9,9 +9,10 @@ export interface TvPrefs {
   showToday: boolean
   showForUs: boolean
   defaultMode: 'auto' | Mode
+  ambientAfterMin: number    // idle minutes on Our Home before the photo frame starts; 0 = never
 }
 export const DEFAULT_PREFS: TvPrefs = {
-  featuredDreamId: null, hero: 'dream', morning: [300, 660], evening: [1080, 300], showToday: true, showForUs: true, defaultMode: 'auto',
+  featuredDreamId: null, hero: 'dream', morning: [300, 660], evening: [1080, 300], showToday: true, showForUs: true, defaultMode: 'auto', ambientAfterMin: 3,
 }
 
 const clamp = (n: unknown, fallback: number) => (typeof n === 'number' && Number.isFinite(n) ? Math.min(1439, Math.max(0, Math.round(n))) : fallback)
@@ -32,6 +33,7 @@ export function resolvePrefs(raw: unknown, dreams: { id: string }[]): TvPrefs {
     morning: win(t.morning, DEFAULT_PREFS.morning), evening: win(t.evening, DEFAULT_PREFS.evening),
     showToday: t.showToday !== false, showForUs: t.showForUs !== false,
     defaultMode: MODES.includes(t.defaultMode as string) ? (t.defaultMode as TvPrefs['defaultMode']) : 'auto',
+    ambientAfterMin: typeof t.ambientAfterMin === 'number' && Number.isFinite(t.ambientAfterMin) ? Math.min(60, Math.max(0, Math.round(t.ambientAfterMin))) : DEFAULT_PREFS.ambientAfterMin,
   }
 }
 

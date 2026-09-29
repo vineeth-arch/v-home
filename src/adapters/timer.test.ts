@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { HandoffTimer, LunaTimer, MockTimer, TimerController, parseStatus, validMinutes } from './timer'
 import type { LunaResult, Platform } from './platform'
 
-const fake = (reply: LunaResult): Platform => ({ simulated: true, call: async () => reply, launchApp: async () => reply })
+const fake = (reply: LunaResult): Platform => ({ simulated: true, call: async () => reply, launchApp: async () => reply, subscribe: () => () => {} })
 
 test('parseStatus covers none / stale / active', () => {
   expect(parseStatus({ returnValue: true, scheduled: false })).toEqual({ scheduled: false })

@@ -40,6 +40,8 @@ export function TvLayout({ raw, dreams, onSave }: { raw: unknown; dreams: { id: 
     <label className="chk"><input type="checkbox" checked={p.showForUs} onChange={(e) => set('showForUs', e.target.checked)} />Show "For us"</label>
     <label>Start the TV in</label>
     <select value={p.defaultMode} onChange={(e) => set('defaultMode', e.target.value as TvPrefs['defaultMode'])}><option value="auto">Auto (by time of day)</option><option value="home">Home</option><option value="morning">Morning</option><option value="evening">Evening</option></select>
+    <label>Photo frame when idle on Our Home</label>
+    <select value={p.ambientAfterMin} onChange={(e) => set('ambientAfterMin', Number(e.target.value))}>{[0, 3, 5, 10, 20].map((m) => <option key={m} value={m}>{m === 0 ? 'Never' : `After ${m} minutes`}</option>)}</select>
     <div className="row" style={{ marginTop: 14 }}>
       <button className="pbtn primary" disabled={busy} onClick={() => run(() => onSave(p))}>Save TV layout</button>
       <button className="pbtn" disabled={busy} onClick={() => run(async () => { await onSave(undefined); setP(DEFAULT_PREFS) })}>Reset to defaults</button></div>

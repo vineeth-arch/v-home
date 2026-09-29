@@ -11,3 +11,5 @@
 - **Developer Mode:** the app disappears if the TV's session expires (`docs/DEV-MODE.md`).
 - **Photo exports** (when photos are added) can be large.
 - **Sample data:** `SIMULATION` appears whenever the TV app runs without the cloud (desktop preview only).
+- The photo frame (Ambient) never fakes input, so LG's "Auto Power Off after 4 hours without input" still switches the TV off while it is showing. That is intended.
+- Keeping LG's own screensaver off during the photo frame is best effort (the TV may refuse it); if refused, LG's screensaver covers the frame after a few minutes.
