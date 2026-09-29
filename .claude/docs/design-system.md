@@ -4,7 +4,9 @@
 - No gradients, no generic animated backgrounds, no autoplay audio. Personal images carry the character.
 - TV canvas 1920x1080, 96px safe margin. H1 56-72px, body 30-36px. Tokens live in `src/styles/tokens.css`.
 - Focus: visible border AND scale/shape change, never colour alone. Every action reachable with arrows, OK, Back. Pointer and keyboard focus stay synced.
-- Motion: subtle, 150-250ms, `prefers-reduced-motion` disables it.
+- Motion: subtle, 150-250ms, `prefers-reduced-motion` disables it. Focus moves use `--dur-focus` (120ms, never staggered); Our Home cells cascade in on screen entry only (`--dur`, 3 steps max). Easing `--ease-out`.
+- Depth (no gradients): cells use `box-shadow: var(--hairline), var(--shadow-1)`; focused elements lift with `--shadow-3`. Radius `--radius-cell` (28px) for bento cells, `--radius-inner` (16px) for tiles inside. Overlays use `--scrim` (hero text) and `--veil` (full-screen). Text on amber/sage uses `--on-accent`.
+- Placeholder dream art (`DreamArt`) is solid layered shapes filled from tokens (`.da-*` classes), so evening mode recolours it too.
 - Our Home fits one screen, no vertical scroll. Max 3 events, 1 shared note, 6 launch tiles.
 - Copy: manifestation is personal intention and visualisation, never guaranteed outcomes. Reflections are labelled "Original reflection", no invented authors.
 - No scoring, streaks, rankings, or completion pressure.

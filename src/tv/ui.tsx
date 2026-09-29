@@ -11,16 +11,21 @@ export function Btn({ id, scope, initial, className = '', children, ...rest }:
   return <button {...fp} {...rest} className={`btn ${fc} ${className}`}>{children}</button>
 }
 
-/** Flat, gradient-free placeholder art until personal images arrive (Phase 4). */
+/** Flat, gradient-free placeholder art until personal images arrive. Solid layered shapes; fills come from tokens (ui.css .da-*). */
 export function DreamArt({ kind }: { kind: Dream['art'] }) {
-  const A = '#e0a458', S = '#9caf88', D = '#36302c', W = '#f5efe6'
+  const halo = (cx: number, cy: number, r: number) => <>
+    <circle className="da-a" cx={cx} cy={cy} r={r * 2.1} opacity=".06" />
+    <circle className="da-a" cx={cx} cy={cy} r={r * 1.55} opacity=".1" />
+    <circle className="da-a" cx={cx} cy={cy} r={r} />
+  </>
   return (
     <svg viewBox="0 0 800 500" preserveAspectRatio="xMidYMid slice" className="dream-art" aria-hidden>
-      <rect width="800" height="500" fill={D} />
-      {kind === 'sea' && <><circle cx="560" cy="200" r="70" fill={A} /><rect y="300" width="800" height="200" fill={S} opacity=".55" /><rect y="340" width="800" height="12" fill={W} opacity=".25" /><rect y="390" width="800" height="8" fill={W} opacity=".2" /></>}
-      {kind === 'hills' && <><circle cx="200" cy="150" r="60" fill={A} /><path d="M0 500V330Q200 220 400 330T800 300V500Z" fill={S} opacity=".7" /><path d="M0 500V400Q250 320 500 410T800 380V500Z" fill={S} /></>}
-      {kind === 'sun' && <><circle cx="400" cy="300" r="120" fill={A} /><rect y="300" width="800" height="200" fill="#292524" /></>}
-      {kind === 'window' && <><rect x="250" y="80" width="300" height="340" rx="150" fill="#292524" stroke={A} strokeWidth="10" /><rect x="395" y="80" width="10" height="340" fill={A} /><rect x="250" y="240" width="300" height="10" fill={A} /><rect x="0" y="420" width="800" height="80" fill={S} opacity=".6" /></>}
+      <rect className="da-d" width="800" height="500" />
+      {[[90, 70], [180, 40], [300, 90], [660, 60], [730, 120], [520, 36]].map(([x, y]) => <circle key={x} className="da-w" cx={x} cy={y} r="2.5" opacity=".35" />)}
+      {kind === 'sea' && <>{halo(560, 230, 70)}<rect className="da-s" y="300" width="800" height="200" opacity=".55" /><rect className="da-a" x="490" y="312" width="140" height="8" rx="4" opacity=".55" /><rect className="da-w" x="120" y="350" width="560" height="10" rx="5" opacity=".22" /><rect className="da-w" x="220" y="400" width="420" height="8" rx="4" opacity=".16" /><rect className="da-w" x="80" y="445" width="300" height="6" rx="3" opacity=".12" /></>}
+      {kind === 'hills' && <>{halo(210, 170, 60)}<path className="da-s" d="M0 500V300Q180 200 380 300T800 270V500Z" opacity=".35" /><path className="da-s" d="M0 500V340Q200 240 400 340T800 310V500Z" opacity=".65" /><path className="da-s" d="M0 500V410Q250 330 500 420T800 390V500Z" /></>}
+      {kind === 'sun' && <>{halo(400, 215, 100)}<rect className="da-f" y="215" width="800" height="285" /><rect className="da-a" x="310" y="236" width="180" height="8" rx="4" opacity=".4" /><rect className="da-a" x="350" y="262" width="100" height="6" rx="3" opacity=".25" /></>}
+      {kind === 'window' && <>{halo(400, 250, 70)}<rect className="da-f" x="250" y="80" width="300" height="340" rx="150" opacity=".55" /><rect x="250" y="80" width="300" height="340" rx="150" fill="none" className="da-stroke" strokeWidth="10" /><rect className="da-a" x="395" y="80" width="10" height="340" /><rect className="da-a" x="250" y="240" width="300" height="10" /><rect className="da-s" x="0" y="420" width="800" height="80" opacity=".6" /></>}
     </svg>
   )
 }
