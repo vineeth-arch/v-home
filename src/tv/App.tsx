@@ -13,11 +13,13 @@ export function App() {
   return (
     <div className="app">
       <Header title={screen === 'home' ? undefined : TITLES[screen]} />
-      {screen === 'home' && <OurHome />}
-      {screen === 'watch' && <Watch />}
-      {screen === 'us' && <Us />}
-      {screen === 'ideas' && <Ideas />}
-      {screen === 'settings' && <Settings />}
+      <div key={screen} className="screen-in">
+        {screen === 'home' && <OurHome />}
+        {screen === 'watch' && <Watch />}
+        {screen === 'us' && <Us />}
+        {screen === 'ideas' && <Ideas />}
+        {screen === 'settings' && <Settings />}
+      </div>
       <Nav />
       {overlay === 'quick' && <QuickControls onClose={close} />}
       {overlay === 'morning' && <MorningRitual onClose={close} />}

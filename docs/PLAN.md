@@ -2,6 +2,16 @@
 
 > Planned on Opus 5.5. **Executed on Sonnet.** Every task below includes the exact files, commands and a check that must pass. Where a choice exists, the plan makes it. Do not re-decide a choice that is already marked here.
 
+## Progress (update as tasks finish)
+
+- [x] Phase 0 setup (repo, configs, design system, file:// IIFE render verified)
+- [x] Phase 1 TV shell, focus engine (overlay scopes), platform + timer adapters (all unverified on TV)
+- [x] Phase 3 screens, rituals, Quick controls on fixtures; render-gated at 1920x1080; impeccable critique 26/40 (fixes applied); entry-only motion pass
+- [ ] Phase 4 Supabase + phone companion (next; Stop point A for cloud project)
+- [ ] Phase 5 TMDB + weather
+- [ ] Phase 2/6 TV gate + packaging (blocked on LGTV step 10). Untested on hardware: everything.
+- Known gaps: fonts are system stacks (self-hosted woff2 not added yet); phone viewport (390px) checks not applicable until Phase 4.
+
 ## Context
 
 Vineeth and his wife want a warm, shared LG TV dashboard (V/HOME) with a phone companion. The full brief is locked.

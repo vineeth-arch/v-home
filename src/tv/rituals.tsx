@@ -15,7 +15,7 @@ function Flow({ scope, cards, onClose, start = 0 }: { scope: string; cards: { st
   return (
     <div className="overlay"><div className="panel card-flow">
       <div className="step">{cards[i].step} · {i + 1} of {cards.length}</div>
-      {cards[i].body}
+      <div key={i} className="card-in">{cards[i].body}</div>
       <div className="flow-nav">
         {i > 0 && <Btn id={`${scope}-prev`} scope={scope} className="ghost" onClick={() => setI(i - 1)}>Previous</Btn>}
         {!last && <Btn id={`${scope}-next`} scope={scope} initial className="primary" onClick={() => setI(i + 1)}>Next</Btn>}
