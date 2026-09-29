@@ -5,7 +5,8 @@ import { ENTITIES } from './entities'
 import { supabaseConfigured } from '../shared/supabase'
 import { buildExport, previewCounts, remapImport, TABLES, type ExportFile } from '../shared/exportImport'
 import type { PinnedApp } from '../shared/model'
-import { LaunchStrip, TvLayout } from './TvLayout'
+import { LaunchStrip, MoreApps, TvLayout } from './TvLayout'
+import { sanitizeCustomApps } from '../shared/apps'
 import { Reflections } from './Reflections'
 import { Weekly } from './Weekly'
 import { ideaToDream, ideaToTask } from '../shared/convert'
@@ -104,6 +105,7 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
       <button className="pbtn" onClick={async () => { try { const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=5`); setHits(((await r.json()).results ?? [])) } catch { setMsg('City search unavailable.') } }}>Search</button></div>
     {hits.map((x) => <button key={`${x.latitude}${x.longitude}`} className="item" onClick={() => { void patchSettings({ city: x.name, lat: x.latitude, lon: x.longitude, region: x.country_code }); setHits([]) }}>{x.name}{x.admin1 ? `, ${x.admin1}` : ''} · {x.country_code}</button>)}
     <h2>TV launch strip</h2><LaunchStrip pinned={pinned as PinnedApp[]} onChange={(next) => void patchSettings({ pinnedApps: next })} />
+    <h2>More apps</h2><MoreApps apps={sanitizeCustomApps(h.settings.customApps)} onChange={(next) => void patchSettings({ customApps: next })} />
     <h2>TV layout</h2><div className="dim">The layout stays fixed. These tune it.</div>
     <TvLayout key={h.revision} raw={h.settings.tv} dreams={dreams} onSave={(tv) => patchSettings({ tv })} />
     <h2>Invite your partner</h2><div className="row"><button className="pbtn" onClick={async () => { try { setInvite(`${location.origin}/?token=${await createInvite(hh)}`) } catch (x) { setMsg(errMsg(x)) } }}>Create invite link</button></div>

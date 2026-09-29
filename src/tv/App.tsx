@@ -1,10 +1,10 @@
-import { Header, Nav, OurHome, Watch, Us, Ideas, Settings, Pairing, PairingGate } from './screens'
+import { Header, Nav, OurHome, Watch, Us, Ideas, Apps, Settings, Pairing, PairingGate } from './screens'
 import { useApp, type Screen } from './state'
 import { useLayer } from './FocusProvider'
 import { QuickControls } from './QuickControls'
 import { MorningRitual, BedtimeRitual } from './rituals'
 
-const TITLES: Record<Exclude<Screen, 'home'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', settings: 'Settings' }
+const TITLES: Record<Exclude<Screen, 'home'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', apps: 'Apps', settings: 'Settings' }
 
 export function App() {
   const { screen, go, overlay, setOverlay, live, toast } = useApp()
@@ -19,6 +19,7 @@ export function App() {
         {screen === 'watch' && <Watch />}
         {screen === 'us' && <Us />}
         {screen === 'ideas' && <Ideas />}
+        {screen === 'apps' && <Apps />}
         {screen === 'settings' && <Settings />}
       </div>
       {live?.offline && <div className="offline">Showing saved content{live.snapshot ? ` from ${new Date(live.snapshot.syncedAt).toLocaleTimeString()}` : ''}. Reconnecting…</div>}

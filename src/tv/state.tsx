@@ -10,7 +10,7 @@ import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapt
 import { resolvePrefs } from '../shared/prefs'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
-export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'settings'
+export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'apps' | 'settings'
 export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing'
 
 export interface AppState {

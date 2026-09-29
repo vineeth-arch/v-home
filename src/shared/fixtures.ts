@@ -11,7 +11,7 @@ const day = (offset: number, hhmm: string) => {
 
 export const fixtureSnapshot = (): Snapshot => ({
   household: {
-    id: 'sim-household', name: 'Our Home', tz: 'Asia/Kolkata', city: 'Sample City', prefs: DEFAULT_PREFS, hiddenReflections: [],
+    id: 'sim-household', name: 'Our Home', tz: 'Asia/Kolkata', city: 'Sample City', prefs: DEFAULT_PREFS, hiddenReflections: [], customApps: [],
     people: [{ id: 'p1', name: 'Vineeth' }, { id: 'p2', name: 'Partner' }],
     pinnedApps: [
       { id: 'netflix', label: 'Netflix', verified: false }, { id: 'youtube.leanback.v4', label: 'YouTube', verified: false },

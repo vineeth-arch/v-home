@@ -10,10 +10,11 @@ import { appsOf, type WatchItem } from '../shared/model'
 import { appForService } from '../shared/launch'
 import { heroDream } from '../shared/prefs'
 import { mondayOf } from '../shared/week'
+import { allApps } from '../shared/apps'
 import qrcode from 'qrcode-generator'
 
 export const NAV: { id: Screen; label: string }[] = [
-  { id: 'home', label: 'Our Home' }, { id: 'watch', label: 'Watch Together' }, { id: 'us', label: 'Us' }, { id: 'ideas', label: 'Idea Wall' },
+  { id: 'home', label: 'Our Home' }, { id: 'watch', label: 'Watch Together' }, { id: 'us', label: 'Us' }, { id: 'ideas', label: 'Idea Wall' }, { id: 'apps', label: 'Apps' },
 ]
 const MODE_LABEL = { home: 'Home', morning: 'Morning', evening: 'Evening' } as const
 
@@ -206,6 +207,23 @@ export function Ideas() {
       <span className="dim small" style={{ alignSelf: 'center' }}>Page {page + 1} of {pages}</span>
       <Btn id="ideas-next" className="chip ghost" onClick={() => setPage((p) => (p + 1) % pages)}>Next</Btn>
     </div>}
+  </>
+}
+
+/** Plain text list of apps and inputs. No icons, no ads. Each row uses the same launcher (and error message) as the strip. */
+export function Apps() {
+  const { snap, launch } = useApp()
+  const [page, setPage] = useState(0)
+  const list = allApps(snap.household.customApps)
+  const per = 12, pages = Math.max(1, Math.ceil(list.length / per))
+  return <>
+    <div className="scroll-free"><div className="apps-grid">{list.slice(page * per, page * per + per).map((a, k) => (
+      <Btn key={a.id} id={`apps-${a.id}`} initial={k === 0} className="app-row" onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>))}</div></div>
+    {pages > 1 && <div className="presets">
+      <Btn id="apps-prev" className="chip ghost" onClick={() => setPage((p) => (p + pages - 1) % pages)}>Previous</Btn>
+      <span className="dim small" style={{ alignSelf: 'center' }}>Page {page + 1} of {pages}</span>
+      <Btn id="apps-next" className="chip ghost" onClick={() => setPage((p) => (p + 1) % pages)}>Next</Btn></div>}
+    <div className="dim small">Add more apps from your phone: Settings, More apps.</div>
   </>
 }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CANDIDATE_APPS, type PinnedApp } from '../shared/model'
+import { isValidAppId, MAX_CUSTOM_APPS } from '../shared/apps'
 import { DEFAULT_PREFS, fromHHMM, resolvePrefs, toHHMM, windowsOverlap, type TvPrefs } from '../shared/prefs'
 
 export const MAX_STRIP = 6
@@ -42,5 +43,26 @@ export function TvLayout({ raw, dreams, onSave }: { raw: unknown; dreams: { id: 
     <div className="row" style={{ marginTop: 14 }}>
       <button className="pbtn primary" disabled={busy} onClick={() => run(() => onSave(p))}>Save TV layout</button>
       <button className="pbtn" disabled={busy} onClick={() => run(async () => { await onSave(undefined); setP(DEFAULT_PREFS) })}>Reset to defaults</button></div>
+  </div>
+}
+
+/** Extra apps for the TV's Apps list. The ID comes from the TV itself; a wrong ID just shows "Couldn't open". */
+export function MoreApps({ apps, onChange }: { apps: PinnedApp[]; onChange: (next: PinnedApp[]) => void }) {
+  const [label, setLabel] = useState(''); const [id, setId] = useState(''); const [err, setErr] = useState('')
+  const add = () => {
+    const l = label.trim(), i = id.trim()
+    if (!l) return setErr('Give it a name.')
+    if (!isValidAppId(i)) return setErr('The ID uses letters, numbers, dots, dashes or underscores (2 to 100 characters).')
+    if (apps.some((a) => a.id === i)) return setErr('That ID is already in the list.')
+    if (apps.length >= MAX_CUSTOM_APPS) return setErr(`Up to ${MAX_CUSTOM_APPS} extra apps.`)
+    setErr(''); onChange([...apps, { id: i, label: l, verified: false }]); setLabel(''); setId('')
+  }
+  return <div>
+    <div className="dim">Apps shown in the TV's Apps list besides the built-in ones.</div>
+    {apps.map((a) => <div className="item" key={a.id}><span>{a.label}</span><span className="sub">{a.id}</span><div className="row"><button className="pbtn danger" onClick={() => onChange(apps.filter((x) => x.id !== a.id))}>Remove</button></div></div>)}
+    <label>Name</label><input value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} />
+    <label>App ID (from the TV)</label><input value={id} autoCapitalize="none" autoCorrect="off" onChange={(e) => setId(e.target.value)} />
+    {err && <div className="err">{err}</div>}
+    <div className="row" style={{ marginTop: 10 }}><button className="pbtn" onClick={add}>Add app</button></div>
   </div>
 }
