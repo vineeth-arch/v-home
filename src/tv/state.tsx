@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { fixtureSnapshot, fixtureWeather } from '../shared/fixtures'
 import { emptySnapshot, type Snapshot } from '../shared/model'
-import { DEFAULT_WINDOWS, resolveMode, shouldApplyScheduledMode, type Mode } from '../shared/modes'
+import { resolveMode, shouldApplyScheduledMode, type Mode } from '../shared/modes'
 import { createPlatform, type Platform } from '../adapters/platform'
 import { supabaseConfigured } from '../shared/supabase'
 import { launchFailure } from '../shared/launch'
 import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
+import { resolvePrefs } from '../shared/prefs'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
 export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'settings'
@@ -51,11 +52,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ?empty=1 previews a brand-new household (simulation only)
   const isLive = supabaseConfigured && !new URLSearchParams(location.search).has('sim')
   const live = useLive(isLive)
-  const [simSnap, setSnap] = useState<Snapshot>(() => (new URLSearchParams(location.search).has('empty') ? emptySnapshot() : fixtureSnapshot()))
+  const [simSnap, setSnap] = useState<Snapshot>(() => {
+    const q = new URLSearchParams(location.search)
+    const base = q.has('empty') ? emptySnapshot() : fixtureSnapshot()
+    // ?prefs={"showForUs":false} previews display preferences in simulation
+    try { const raw = q.get('prefs'); if (raw) base.household.prefs = resolvePrefs(JSON.parse(raw), base.dreams) } catch { /* ignore bad JSON */ }
+    return base
+  })
   const snap = isLive ? live.snapshot ?? emptySnapshot() : simSnap
   const [now, setNow] = useState(() => new Date())
-  const [manualMode, setManualMode] = useState<Mode | null>(null)
-  const [applied, setApplied] = useState<Mode>(() => resolveMode(new Date(), snap.household.tz, DEFAULT_WINDOWS))
+  const prefs = snap.household.prefs
+  const windows = useMemo(() => ({ morning: prefs.morning, evening: prefs.evening }), [prefs.morning, prefs.evening])
+  // undefined = the user hasn't chosen yet, so the household's default mode applies
+  const [manualChoice, setManualChoice] = useState<Mode | null | undefined>(undefined)
+  const manualMode = manualChoice === undefined ? (prefs.defaultMode === 'auto' ? null : prefs.defaultMode) : manualChoice
+  const setManualMode = useCallback((m: Mode | null) => setManualChoice(m), [])
+  const [applied, setApplied] = useState<Mode>(() => resolveMode(new Date(), snap.household.tz, windows))
   const [guest, setGuest] = useState(false)
   const [screen, setScreen] = useState<Screen>('home')
   const [overlay, setOverlay] = useState<Overlay>(null)
@@ -80,9 +92,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { removeEventListener('keydown', bump); removeEventListener('mousemove', bump); clearInterval(id) }
   }, [])
   useEffect(() => { // scheduled change only when idle on Our Home
-    const scheduled = resolveMode(now, tz, DEFAULT_WINDOWS)
+    const scheduled = resolveMode(now, tz, windows)
     if (shouldApplyScheduledMode(applied, scheduled, { screen, ritualActive: overlay === 'morning' || overlay === 'bedtime', idleMs: Date.now() - lastInput.current })) setApplied(scheduled)
-  }, [now, tz, applied, screen, overlay])
+  }, [now, tz, windows, applied, screen, overlay])
 
   const refreshTimer = useCallback(async () => {
     const r = await ctrl.refresh()

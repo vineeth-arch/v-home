@@ -100,3 +100,4 @@
 .btn:active { transform: scale(0.97); }
 .offline { position: absolute; left: var(--safe); right: var(--safe); bottom: 24px; text-align: center; color: var(--amber); font-size: 26px; }
 .toast { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); z-index: 20; background: var(--surface-2); border: 2px solid var(--amber); border-radius: 999px; padding: 14px 36px; font-size: 28px; color: var(--text); animation: rise-in var(--dur) var(--ease-out); }
+.main[data-cards='none'] { grid-template-columns: 1fr; }

@@ -1,4 +1,5 @@
 import type { Dream, EventItem, Idea, NoteItem, Snapshot, TaskItem, WatchItem } from './model'
+import { resolvePrefs } from './prefs'
 
 /** Raw rows as returned by the TV-scoped selects. Column names match the DB. */
 export interface Rows {
@@ -28,6 +29,7 @@ export function toSnapshot(r: Rows, now = Date.now()): Snapshot {
       city: typeof st.city === 'string' ? st.city : undefined, lat: num(st.lat), lon: num(st.lon),
       region: typeof st.region === 'string' ? st.region : undefined,
       pinnedApps: Array.isArray(st.pinnedApps) ? (st.pinnedApps as Snapshot['household']['pinnedApps']) : [],
+      prefs: resolvePrefs(st.tv, r.dreams),
     },
     events: r.events.map((e): EventItem => ({ id: e.id, title: e.title, at: e.starts_at, allDay: e.all_day })),
     tasks: r.tasks.map((t): TaskItem => ({ id: t.id, title: t.title, owner: t.owner, kind: t.kind, done: t.done })),

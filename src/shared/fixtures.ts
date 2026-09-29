@@ -1,5 +1,6 @@
 // Labelled sample data. Used only by the simulation data source (never shipped as household content).
 import type { Snapshot } from './model'
+import { DEFAULT_PREFS } from './prefs'
 
 const day = (offset: number, hhmm: string) => {
   const d = new Date(); d.setDate(d.getDate() + offset)
@@ -8,7 +9,7 @@ const day = (offset: number, hhmm: string) => {
 
 export const fixtureSnapshot = (): Snapshot => ({
   household: {
-    name: 'Our Home', tz: 'Asia/Kolkata', city: 'Sample City',
+    name: 'Our Home', tz: 'Asia/Kolkata', city: 'Sample City', prefs: DEFAULT_PREFS,
     people: [{ id: 'p1', name: 'Vineeth' }, { id: 'p2', name: 'Partner' }],
     pinnedApps: [
       { id: 'netflix', label: 'Netflix', verified: false }, { id: 'youtube.leanback.v4', label: 'YouTube', verified: false },

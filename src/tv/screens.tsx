@@ -8,6 +8,7 @@ import { upcoming } from '../shared/upcoming'
 import { explainEmpty, pickForUs, topMatches, type Candidate, type Filters } from '../shared/picker'
 import { appsOf, type WatchItem } from '../shared/model'
 import { appForService } from '../shared/launch'
+import { heroDream } from '../shared/prefs'
 import qrcode from 'qrcode-generator'
 
 export const NAV: { id: Screen; label: string }[] = [
@@ -57,14 +58,16 @@ export function OurHome() {
   const date = localDate(now, tz)
   const slot = mode === 'evening' ? 'evening' : 'morning'
   const refl = pickDaily(snap.household.name, date, slot)
-  const dream = guest ? undefined : snap.dreams[0]
+  const prefs = snap.household.prefs
+  const dream = guest ? undefined : heroDream(prefs, snap.dreams)      // hero picture/affirmation
+  const stepDream = guest ? undefined : snap.dreams[0]                  // "For us" small step
   const quote = mode === 'home' && dream ? dream.affirmation : refl?.text ?? ''
   const cap = mode === 'home' && dream ? dream.title : 'Original reflection'
   const items = guest ? [] : upcoming(snap, now, mode)
   const note = guest ? undefined : snap.notes[0]
-  const forUs = note ? { l: 'A note', t: `“${note.text}” · ${personName(snap, note.author)}` } : dream ? { l: 'A small step', t: dream.nextStep } : null
+  const forUs = note ? { l: 'A note', t: `“${note.text}” · ${personName(snap, note.author)}` } : stepDream ? { l: 'A small step', t: stepDream.nextStep } : null
   return <>
-    <div className="main">
+    <div className="main" data-cards={prefs.showToday || prefs.showForUs ? undefined : 'none'}>
       <div className="hero">
         <DreamArt kind={dream?.art ?? 'sun'} />
         <div className="scrim">
@@ -82,18 +85,18 @@ export function OurHome() {
           </div>
         </div>
       </div>
-      <div className="col">
-        <div className="card grow">
+      {(prefs.showToday || prefs.showForUs) && <div className="col">
+        {prefs.showToday && <div className="card grow">
           <h2>{mode === 'evening' ? 'Tomorrow' : mode === 'morning' ? 'Today' : 'Today & tomorrow'}</h2>
           {guest ? <div className="guest-note">Guest view: plans are hidden.</div>
             : items.length ? items.map((u) => <div className="row" key={u.key}><span className="t">{u.when ? `${mode === 'home' ? (localDate(new Date(u.when), tz) === date ? 'Today ' : 'Tomorrow ') : ''}${fmtTime(u.when, tz)}` : 'To do'}</span><span>{u.title}</span></div>)
               : <div className="empty">Nothing planned. Add something from your phone.</div>}
-        </div>
-        <div className="card">
+        </div>}
+        {prefs.showForUs && <div className={`card ${prefs.showToday ? '' : 'grow'}`}>
           <h2>For us</h2>
           {forUs ? <div><div className="dim small">{forUs.l}</div><div className="clamp2">{forUs.t}</div></div> : <div className="empty">A shared note or a small step will show up here.</div>}
-        </div>
-      </div>
+        </div>}
+      </div>}
     </div>
     <div className="strip">
       {appsOf(snap).slice(0, 6).map((a) => <Btn key={a.id} id={`app-${a.id}`} onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}

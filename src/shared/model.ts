@@ -1,4 +1,5 @@
 import type { Pref, WatchEntry } from './picker'
+import { DEFAULT_PREFS, type TvPrefs } from './prefs'
 
 export interface Person { id: string; name: string }
 export interface PinnedApp { id: string; label: string; verified: boolean }
@@ -10,12 +11,12 @@ export interface Idea { id: string; title: string; note: string; status: 'new' |
 export interface WatchItem { entry: WatchEntry & { summary?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
 
 export interface Snapshot {
-  household: { name: string; tz: string; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[] }
+  household: { name: string; tz: string; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[]; prefs: TvPrefs }
   events: EventItem[]; tasks: TaskItem[]; dreams: Dream[]; notes: NoteItem[]; ideas: Idea[]; watch: WatchItem[]
   syncedAt: number
 }
 export const emptySnapshot = (tz = 'Asia/Kolkata'): Snapshot => ({
-  household: { name: 'Our Home', tz, people: [], pinnedApps: [] },
+  household: { name: 'Our Home', tz, people: [], pinnedApps: [], prefs: DEFAULT_PREFS },
   events: [], tasks: [], dreams: [], notes: [], ideas: [], watch: [], syncedAt: Date.now(),
 })
 

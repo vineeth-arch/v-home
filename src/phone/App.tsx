@@ -4,7 +4,8 @@ import { Crud } from './Crud'
 import { ENTITIES } from './entities'
 import { supabaseConfigured } from '../shared/supabase'
 import { buildExport, previewCounts, remapImport, TABLES, type ExportFile } from '../shared/exportImport'
-import { CANDIDATE_APPS } from '../shared/model'
+import type { PinnedApp } from '../shared/model'
+import { LaunchStrip, TvLayout } from './TvLayout'
 
 const qs = new URLSearchParams(location.search)
 const errMsg = (x: unknown) => (x instanceof Error ? x.message : String(x))
@@ -64,9 +65,11 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
   const [h, setH] = useState<Awaited<ReturnType<typeof getHousehold>> | null>(null); const [msg, setMsg] = useState(''); const [invite, setInvite] = useState('')
   const [city, setCity] = useState(''); const [hits, setHits] = useState<{ name: string; admin1?: string; country_code: string; latitude: number; longitude: number }[]>([])
   const [imp, setImp] = useState<ExportFile | null>(null)
+  const [dreams, setDreams] = useState<{ id: string; title: string }[]>([])
+  useEffect(() => { void listRows('dreams').then((r) => setDreams(r.map((d) => ({ id: d.id, title: String(d.title) })))).catch(() => {}) }, [])
   useEffect(() => { void getHousehold().then((x) => { setH(x); setCity(String(x.settings.city ?? '')) }) }, [])
   const patchSettings = async (p: Record<string, unknown>, extra: Record<string, unknown> = {}) => { if (!h) return; try { await saveHousehold(h, { ...extra, settings: { ...h.settings, ...p } }); setH(await getHousehold()); setMsg('Saved.') } catch (x) { setMsg(errMsg(x)) } }
-  const pinned = (h?.settings.pinnedApps as { id: string }[] | undefined) ?? []
+  const pinned = (h?.settings.pinnedApps as PinnedApp[] | undefined) ?? []
   const doExport = async () => {
     const rows = Object.fromEntries(await Promise.all(TABLES.map(async (t) => [t, await listRows(t)]))) as never
     const f = buildExport({ name: h!.name, timezone: h!.timezone, settings: h!.settings }, rows)
@@ -81,8 +84,9 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
     <div className="row"><input value={city} onChange={(e) => setCity(e.target.value)} style={{ flex: 1 }} placeholder="Search city" />
       <button className="pbtn" onClick={async () => { try { const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=5`); setHits(((await r.json()).results ?? [])) } catch { setMsg('City search unavailable.') } }}>Search</button></div>
     {hits.map((x) => <button key={`${x.latitude}${x.longitude}`} className="item" onClick={() => { void patchSettings({ city: x.name, lat: x.latitude, lon: x.longitude, region: x.country_code }); setHits([]) }}>{x.name}{x.admin1 ? `, ${x.admin1}` : ''} · {x.country_code}</button>)}
-    <h2>TV launch strip</h2><div className="dim">Unverified until tested on your TV.</div>
-    {CANDIDATE_APPS.map((a) => <label className="chk" key={a.id}><input type="checkbox" checked={pinned.some((p) => p.id === a.id)} onChange={(e) => void patchSettings({ pinnedApps: e.target.checked ? [...pinned, a] : pinned.filter((p) => p.id !== a.id) })} />{a.label}</label>)}
+    <h2>TV launch strip</h2><LaunchStrip pinned={pinned as PinnedApp[]} onChange={(next) => void patchSettings({ pinnedApps: next })} />
+    <h2>TV layout</h2><div className="dim">The layout stays fixed. These tune it.</div>
+    <TvLayout key={h.revision} raw={h.settings.tv} dreams={dreams} onSave={(tv) => patchSettings({ tv })} />
     <h2>Invite your partner</h2><div className="row"><button className="pbtn" onClick={async () => { try { setInvite(`${location.origin}/?token=${await createInvite(hh)}`) } catch (x) { setMsg(errMsg(x)) } }}>Create invite link</button></div>
     {invite && <div className="item"><span className="sub">Send this once. It works for 7 days and one person.</span><span style={{ wordBreak: 'break-all' }}>{invite}</span></div>}
     <h2>Backup</h2><div className="row"><button className="pbtn" onClick={() => void doExport()}>Export household</button>
