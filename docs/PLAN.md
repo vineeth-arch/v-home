@@ -7,7 +7,7 @@
 - [x] Phase 0 setup (repo, configs, design system, file:// IIFE render verified)
 - [x] Phase 1 TV shell, focus engine (overlay scopes), platform + timer adapters (all unverified on TV)
 - [x] Phase 3 screens, rituals, Quick controls on fixtures; render-gated at 1920x1080; impeccable critique 26/40 (fixes applied); entry-only motion pass
-- [~] Phase 4: DONE backend (schema, RLS, RPCs, storage policy, 39 pgTAP tests pass locally on ports 553xx; other local stack `di-form-engine` uses 543xx, do not stop it). DONE client data layer (snapshot mapper, sync engine, cache, TV live hook + pairing gate, display_unpair RPC; 41 pgTAP tests). TODO: live E2E run (needs .env.local, see below), phone app.
+- [~] Phase 4: DONE backend (schema, RLS, RPCs, storage policy, 39 pgTAP tests pass locally on ports 553xx; other local stack `di-form-engine` uses 543xx, do not stop it). DONE client data layer (snapshot mapper, sync engine, cache, TV live hook + pairing gate, display_unpair RPC; 41 pgTAP tests). Phone app WRITTEN (auth, onboarding, invite, CRUD for plans/tasks/dreams/notes/ideas/watch with votes, draft autosave, conflict dialog, displays, settings, export/import); only the sign-in screen was render-checked at 390px. UNTESTED: every signed-in flow, live TV sync, image upload (image.ts not written; TV image display and export of photos not done). TODO: live E2E (needs .env.local), image upload.
   - Local Supabase start command: `supabase start -x logflare,vector,imgproxy,mailpit,studio,postgres-meta,supavisor,edge-runtime` (full stack times out on this machine).
   - Finding: new Supabase needs explicit GRANTs to `authenticated` (added in 0002).
 - [ ] Phase 5 TMDB + weather

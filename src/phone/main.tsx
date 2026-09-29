@@ -1,4 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import '../styles/tokens.css'
+import './phone.css'
+import { App } from './App'
 
-createRoot(document.getElementById('root')!).render(<h1 style={{ padding: 24 }}>V/HOME</h1>)
+createRoot(document.getElementById('root')!).render(<App />)
