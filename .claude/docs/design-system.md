@@ -8,4 +8,4 @@
 - Our Home fits one screen, no vertical scroll. Max 3 events, 1 shared note, 6 launch tiles.
 - Copy: manifestation is personal intention and visualisation, never guaranteed outcomes. Reflections are labelled "Original reflection", no invented authors.
 - No scoring, streaks, rankings, or completion pressure.
-- Fonts self-hosted (no CDN). Phone UI is mobile-first at 390px.
+- Fonts self-hosted in public/fonts (no CDN): Newsreader (serif, headings/quotes) and Atkinson Hyperlegible (body). @font-face lives inline in each HTML file with document-relative URLs (works for the phone and for file:// in the IPK). Phone UI is mobile-first at 390px.

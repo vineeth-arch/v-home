@@ -4,8 +4,8 @@
   --amber: #e0a458; --sage: #9caf88; --danger: #d9776b;
   --safe: 96px; --radius: 20px;
   --fs-h1: 64px; --fs-h2: 44px; --fs-body: 32px; --fs-small: 26px;
-  --font: 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
-  --serif: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --font: 'Atkinson Hyperlegible', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+  --serif: 'Newsreader', 'Iowan Old Style', Georgia, serif;
   --dur: 200ms;
 }
 :root[data-mode='evening'] { --bg: #14110f; --surface: #1f1a17; --surface-2: #2a231f; --amber: #c98f4a; --text: #e8dfd2; }

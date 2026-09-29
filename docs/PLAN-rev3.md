@@ -10,7 +10,12 @@
   - TV app with pairing and sync
   - IPK: `build/com.designinnsaeit.vhome_0.1.0_all.ipk`
 - **Verified by Vineeth:** signed up, created a household, made an invite link, and added content on the phone.
-- **TV not reachable right now.** 2026-09-29: ping to 192.168.29.224 gets no reply, and ports 9922/3001 are closed. The Mac is on the same subnet (.216). His photo shows "The device will be restarted", so the TV is most likely rebooting after a Developer Mode change.
+- **Status 2026-09-29 (later):**
+  - **TV reachable and V/HOME installed.** Ping answers, SSH 9922 is open, and both V/HOME and V/TV Sleep show in `ares-install --list`.
+  - **Verified by Vineeth on the TV:** pairing works, content appears, and the remote's arrows, OK and Back all work.
+  - **Live weather** is built and installed: Open-Meteo, cached, with stale handling. **Needs his TV check.** Mumbai is saved (lat 19.07, lon 72.88). It was missing before because the adapter didn't exist.
+  - **Task 0 is done.**
+  - **Task 2 is done** except for the TV check.
 - **Five items left in V1:** photos, TMDB + weather, fonts, three missing phone screens, and four docs.
 
 ## Review pass: what would have failed in rev 3 draft, and the fix now in this plan
@@ -29,7 +34,10 @@
 | 10 | The TV can't show the weekly dream step (it doesn't read `dream_steps`). | Task 5: step title stored in the payload. |
 | 11 | Creating test accounts on the cloud project isn't allowed. | E2E runs on the local stack only (ports 553xx), with `edge-runtime` **not** excluded, so `supabase functions serve` works. |
 
-## Executor rules (Sonnet)
+## Executor rules (Sonnet): plan built on Opus 5.5, executed on Sonnet
+
+- Choices marked in this plan are decided. Don't reopen them. If a gate fails, stop at the stop rule written for that gate. Never find a clever workaround (root, keep-alive, protected files, or guessed IDs).
+- After every TV install, run the session check in review item 12.
 
 - One task at a time. `npm run check` must be green before each commit. Push to `main` at the end of each task, and Vercel deploys on push.
 - Never write the DB password or TMDB token to a file or log. The linked project already stores its connection details.
@@ -247,9 +255,161 @@ Read `LGTV/docs/dev-mode.md` and `LGTV/docs/troubleshooting.md` (read-only) firs
   - Photo exports get large.
 - **README:** add links to these docs.
 
+## Task 7: TV preferences you can change from the phone (about 3 h)
+
+**Decision (Vineeth):** keep the layout as fixed sections. Do **not** build free-form or preset layouts. Make these four things adjustable:
+
+1. **Featured dream and hero content.**
+2. **Morning/Evening times.**
+3. **Launch strip order and count.**
+4. **Show/hide sections and the default mode.**
+
+- **Storage:** `households.settings.tv` (jsonb). No migration is needed, and the TV already reads household settings.
+  ```
+  { featuredDreamId: string|null, hero: 'dream'|'reflection',
+    morning: [startMin, endMin], evening: [startMin, endMin],
+    launch: string[] (ordered app ids, 3 to 6), showToday: boolean, showForUs: boolean,
+    defaultMode: 'auto'|'home'|'morning'|'evening' }
+  ```
+- **`src/shared/prefs.ts` (pure):**
+  - `resolvePrefs(settings, dreams)` returns a fully defaulted `TvPrefs`.
+    - Defaults: featured = first visible dream, hero = 'dream', morning [300, 660], evening [1080, 300], `defaultMode` 'auto', both cards shown.
+    - Clamp minutes to 0–1439.
+    - A window with start == end falls back to the default.
+    - `launch` drops unknown ids, then caps to 6. Fewer than 3 valid ids falls back to `appsOf`'s default order.
+    - A `featuredDreamId` for a dream the TV can't see falls back to the first visible dream. `hero: 'dream'` with no dream falls back to a reflection.
+  - `overlap(morning, evening)` reports overlapping windows. The phone shows a warning; the TV resolves ties as morning first (already `resolveMode`'s order).
+- **Wire it up:**
+  - `snapshot.ts` adds `household.prefs = resolvePrefs(settings, dreams)`. Update `fixtureSnapshot` and `emptySnapshot` too.
+  - `state.tsx` replaces the two `DEFAULT_WINDOWS` uses with `snap.household.prefs` windows, and starts `manualMode` from `defaultMode` ('auto' means null).
+  - `screens.tsx` `OurHome`:
+    - The launch strip follows `prefs.launch` order and count.
+    - **Hero:** uses the featured dream, or reflection-only (art 'sun', no dream title).
+    - **Cards:** both cards on → current layout. One off → the other takes the full column. Both off → the hero spans the full width (`.main` gets `grid-template-columns: 1fr`).
+  - **Guest view** still hides everything personal, whatever the prefs say.
+- **Phone → Settings → "TV layout":**
+  - Featured dream (select, includes "Let V/HOME choose").
+  - Hero (radio: dream / reflection).
+  - Two `<input type="time">` pairs for Morning and Evening, with the overlap warning.
+  - Launch strip: rows with up/down buttons and an on/off toggle, minimum 3, maximum 6. There is no drag on a phone.
+  - Two switches (Today, For us).
+  - Default mode select.
+  - Saves through `saveHousehold`, so a conflict tells the user to reload. **Reset to defaults** removes `settings.tv`.
+- **Tests:**
+  - `resolvePrefs` for defaults, clamping, an unknown launch id, a hidden featured dream, and equal start/end.
+  - `resolveMode` with custom windows, including an evening that wraps midnight.
+  - Launch ordering.
+- **Render check at 1920×1080:** screenshots of both cards on, one off, both off, and 3 launch tiles. Check the header still aligns with the content edge.
+
+## Task 8: Add JioHotstar to the launch strip (about 30 min, needs one TV step)
+
+- **The app ID is unknown.** Public docs don't list it, and `listApps` is denied for the developer shell (checked: "Denied method call listApps"). Don't guess it.
+- **Get the real ID:**
+  1. Vineeth opens JioHotstar on the TV with the remote. One instruction.
+  2. Run LGTV's `ios/VTVCore/.build/release/vtvctl foreground` (read-only; it uses the paired SSAP client). It prints `Foreground app: <id>`. If it fails, use the fallbacks in review item 13.
+  3. Record the ID in `docs/CAPABILITIES.md` as verified.
+- **Add it** to `DEFAULT_APPS` in `src/shared/model.ts` as `{ id: <id>, label: 'JioHotstar', verified: true }`.
+  - That makes 7 candidates while the strip shows at most 6. Rename `DEFAULT_APPS` to `CANDIDATE_APPS`, with the first 6 as the default strip.
+  - The phone's "TV launch strip" checkboxes list every candidate. Task 7 adds ordering and a 3–6 limit.
+- **Launch check:** from V/HOME, press the JioHotstar tile and confirm it opens.
+  - While he does this, also test Netflix, YouTube and Prime, and mark each verified or failed in `CAPABILITIES.md`.
+  - An ID that fails to launch: log it, keep the tile, and show "Couldn't open JioHotstar" on the TV. It is `launchApp`'s `{ok:false}` path, which the UI currently ignores. Fix that: `OurHome`'s tile `onClick` must show the error text in the strip area for 4 s.
+
+## Task 9: Real app icon (about 1 h)
+
+- **Design:** warm charcoal rounded tile (`#1c1917`) with an amber arched window. It echoes the "window" dream art and reads as home. A thin sage horizon line runs across the arch's base. No text: webOS shows the title under the icon, and text is illegible at 80 px.
+- **Generate with Python stdlib** in a new `scripts/make-icons.py`, modelled on `LGTV/scripts/make-icons.py`. Reuse its `png()` writer and supersampling approach. PIL isn't installed, and no rsvg or ImageMagick either, so don't add a dependency.
+- **Sizes:**
+
+  | File | Size |
+  |---|---|
+  | `webos/icon.png` | 80 |
+  | `webos/largeIcon.png` | 130 |
+  | `public/icons/icon-192.png` | 192 |
+  | `public/icons/icon-512.png` | 512 |
+  | `public/icons/apple-touch-icon.png` | 180 |
+
+- **Wire up:**
+  - Add `<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">` to `index.html`.
+  - The manifest already points at 192 and 512.
+- **Check:**
+  1. Render all five with chrome-devtools (open each PNG).
+  2. **Show Vineeth the 512 preview before installing** (SendUserFile) so he can reject or adjust it.
+  3. Reinstall the IPK (upgrade in place, then run the review item 12 session check) and have him confirm how it looks in the LG app bar.
+  4. If the bar still shows the old icon, a TV restart usually refreshes it. Never remove the app for this.
+
+## Review pass 2 (Tasks 7–10b): what would fail, and the fix now in this plan
+
+| # | Would fail | Fix |
+|---|---|---|
+| 12 | A reinstall might wipe the TV's localStorage. The anonymous session is lost, the TV silently shows a new pairing code, and every future install forces a re-pair. It's unknown whether the weather reinstall already did this. | After **every** `install-tv.sh`, check read-only that the TV still shows the dashboard. Also check that `auth.users` anonymous count and the `members` display row are unchanged (psql, read-only). If a new anonymous user appeared, the session does not survive an upgrade: record it in `LIMITATIONS.md`, and tell Vineeth before any later install. **Never** run `ares-install --remove` (it definitely wipes data); if an old icon sticks, accept it rather than remove the app. |
+| 13 | `vtvctl foreground` may fail: the Mac key was reset, or the binary is stale. | Fallback 1: `ares-novacom --run "luna-send-pub -n 1 -f luna://com.webos.applicationManager/getForegroundAppInfo '{}'"` (read-only). Fallback 2: stop and ask; never guess IDs. |
+| 14 | Launching other apps from V/HOME has never been tested. `applications.operation` is a guess, so every tile might silently do nothing. | Task 8's launch check is the gate. If Netflix/YouTube don't open, first try `requiredPermissions` without `applications.operation` (webOS may reject unknown permissions), rebuild and retest. Record the results. The strip error message (Task 8) makes failures visible. |
+| 15 | "Recent Input" may mean HDMI or Live TV, not the last app. It's unknown whether Quick Start+ keeps a sideloaded web app alive overnight. | Test A runs twice: after 1 minute, and after overnight standby. Record both. Test C: with Power On Screen = Recent Input and V/HOME open, check it isn't replaced by HDMI or Live TV. |
+| 16 | Power-on helper: a dev JS service may be denied the `tvpower` Luna API (LGTV already saw `tvpower/turnOff` denied). Activity Manager can only trigger on Luna, not SSAP. Services idle-exit, and a keep-alive loop is forbidden. | Gate G1 is an Activity Manager activity with the trigger `luna://com.webos.service.tvpower/power/getPowerState {subscribe:true}` where `state == 'Active'`. If G1 is denied, or G2 (fires on wake from Quick Start+ standby) doesn't fire in 3 tries, **stop** and document it as not possible. No SSAP polling, no keep-alive, no root. Tell Vineeth this has a real chance of failing before building it. |
+| 17 | The automatic app list needs SSAP `READ_INSTALLED_APPS`. LGTV found an unsigned manifest gets only a limited permission set, so it may be refused. | Gate G3 is `listLaunchPoints` from the V/HOME service. If it gets 401 or insufficient permissions, keep the curated list only, record it and stop. |
+| 18 | The V/HOME service changes packaging (`ares-package dist-tv tv-service`). A broken service could stop the app from installing. | Build the service in a separate commit. The IPK must still install and launch the app. The app works fully if the service call fails (curated list, no helper). The service ID must be `com.designinnsaeit.vhome.service` (the app ID is the prefix). Bundle `ws` the way LGTV does. |
+| 19 | Custom app IDs typed on the phone can be malformed. | Validate with `^[a-zA-Z0-9._-]{2,100}$`, store in `settings.customApps`, and cap at 20. The label is required. |
+| 20 | Changing Task 7 prefs might not refresh the TV. | Already covered: the households update trigger bumps `household_versions`. Test it in the Task 7 E2E (change the launch order on phone A; the TV updates within 5 s). |
+
+## Decisions (Vineeth, 2026-09-29)
+
+- **Power-on:** settings first (Step 1). If V/HOME doesn't come back reliably, build and gate the experimental helper (Step 2). This is his explicit consent to that experiment, but **only** if Step 1 falls short.
+- **Apps list:** curated now, then try the automatic installed list via SSAP, gated.
+- **Layout:** fixed sections plus the four preferences (Task 7). No free-form layout.
+
+## Task 10b: Vineeth's goal is to power on into V/HOME, never LG's ad-filled Home
+
+**Step 1: settings only, no code.** Guide Vineeth through one setting at a time, then test.
+- **Ads off:** Settings → General → System → Additional Settings → Home Settings → **Home Promotion Off** and **Content Recommendation Off**. ([Pocket-lint](https://www.pocket-lint.com/secret-lg-tv-setting/))
+- **Skip LG Home at power-on:** same Home Settings menu → **Power On Screen = Recent Input** (called **Home Auto Launch Off** on older menus). ([Home Assistant thread](https://community.home-assistant.io/t/force-lg-webos-tv-to-start-on-the-home-screen/904090), [LG help](https://www.lg.com/africa/support/product-help/CT20080005-20153711388678))
+- **Quick Start+ On:** the TV sleeps instead of shutting down, and resumes the last app. ([Pocket-lint](https://www.pocket-lint.com/your-lg-tv-could-be-faster-and-all-it-takes-is-turning-off-this-setting/))
+- **Test A:** V/HOME open → remote power off → power on. Expected: V/HOME is back. Run it after 1 minute, **and again after overnight standby**.
+- **Test B:** Netflix open → power off → power on. Expected: Netflix comes back, **not** V/HOME. This is the known gap, including after a V/TV Sleep shutdown.
+- **Test C:** with Power On Screen = Recent Input, confirm the TV doesn't jump to HDMI or Live TV instead of the resumed app.
+- Record both results in `docs/CAPABILITIES.md`.
+
+**Step 2: only if Vineeth approves an experimental power-on hook.** The brief ruled it out ("No boot hooks … don't promise automatic startup"). His new request overrides that only with explicit consent.
+- **What it would be:** a V/HOME JS service (`com.designinnsaeit.vhome.service`, packaged like LGTV's `tv-service`) that registers a **persistent Activity Manager activity**. Its trigger is a power-state change to Active, and its callback launches `com.designinnsaeit.vhome`.
+- **Gate first, on the TV** (review items 16 and 18):
+  1. **G1:** can the service create the activity with the tvpower trigger?
+  2. **G2:** does it fire on wake from standby? Try it 3 times.
+  3. **Before building,** tell Vineeth the chance of failure is real.
+- **If the gate fails:** stop and report. Don't escalate to root, boot scripts or protected files.
+- **Risks:** Developer Mode expiry removes it. It may relaunch V/HOME over a TV show that was resuming (Test B case), so add an "only if the last app was LG Home or none" check if the platform exposes it; otherwise it always opens V/HOME.
+
+**Step 3: LG Home itself can't be edited.** It's a system app, and changing it needs root or protected-file edits, which the brief forbids. Instead, V/HOME gets its own clean **Apps** screen:
+- **The list:** a plain text list, no icons, of installed apps that opens any of them. It's a new nav item "Apps" beside Idea Wall, 2 columns of large text rows, and the remote works as on the other screens.
+- **Source of the list:**
+  - **V1, reliable:** a curated list. `CANDIDATE_APPS` plus any app Vineeth adds from the phone (label + ID). IDs are captured with `vtvctl foreground` while that app is open (see Task 8), and a phone field accepts them. Validation per review item 19. Stored in `settings.customApps`.
+  - **Every row** uses the same `launchApp` path and the same error message as the strip (Task 8).
+  - **Experimental:** the true installed list. The V/HOME service registers its own local SSAP client with the `READ_INSTALLED_APPS` permission, reusing the pattern in `LGTV/tv-service/lib/ssap.js`, and calls `ssap://com.webos.applicationManager/listLaunchPoints`. This needs a one-time on-TV permission prompt. Gate it with Step 2's service; same stop rule if denied.
+- **Also:** in LG Home's own app bar, Vineeth can remove apps he never uses. That's manual, and the remote's edit mode is a supported feature.
+
+## Task 10: Opening V/HOME by default (research done 2026-09-29, no code)
+
+- **What LG allows:**
+  - **Home button:** system-controlled; an app can't take it over. The brief also forbids Home-button interception.
+  - **"Home Auto Launch"** ([All settings] → General → System → Additional settings → Home settings) only decides whether LG's Home appears at power-on. It cannot pick an app. ([LG help](https://www.lg.com/africa/support/product-help/CT20080005-20153711388678), [LG webOS guide](http://kr.eguide.lgappstv.com/manual/w20/atsc/Contents/smarttv/tutorial_k_u_b/enga/w50__smarttv__tutorial_k_u_b__enga.html))
+  - **Auto-start on power-on:** would need a boot or power hook. The brief says "No boot hooks … do not promise automatic startup", so it isn't built.
+- **What we do instead:** document and test.
+  1. **Quick Access:** long-press a number key (for example 1) while V/HOME is open and assign it. From then on, one press of 1 opens V/HOME from anywhere. Test it on his remote and record the result.
+  2. **Move V/HOME to the first position** in LG's Home app bar (edit mode on the bar), with Home Auto Launch **On**. Power on → Home → V/HOME is already highlighted → OK. Two presses.
+- **Write-up:** put both in a new `docs/OPENING.md`, linked from the README. Add a limitations line: "V/HOME cannot replace the Home button or auto-open at power-on."
+
 ## Order
 
-Task 0 now: the TV is reachable. Then Tasks 1 → 2 → 6 → 5 → 4 → 3. Task 3 goes last because it waits on the TMDB token. Tasks 1, 2 and 6 touch no shared files and may run as parallel subagents; Tasks 4 and 5 both edit `snapshot.ts` and `live.ts`, so run them one after the other.
+Task 0 is done: paired, remote verified, weather built and installed.
+
+**Next, in order:**
+1. **Task 10b Step 1:** settings plus Tests A and B, guided with Vineeth. At the same TV visit, check that weather shows and capture the JioHotstar ID (Task 8).
+2. **Task 9:** icon. Show the preview first.
+3. **Task 8:** JioHotstar, plus the launch error message.
+4. **Task 1:** fonts.
+5. **Task 10b Step 3:** curated Apps screen.
+6. **Task 6:** docs, including `OPENING.md`.
+7. **Task 5**, then **Task 7**, then **Task 4**, then **Task 3**.
+8. **Task 10b Step 2** (power-on helper) and the automatic app list: only if Step 1 Test A or B shows V/HOME doesn't come back reliably. The automatic app list rides on the same service. Task 7 goes after Task 5 because both edit `snapshot.ts`, `state.tsx` and the phone Settings screen. Task 3 goes last because it waits on the TMDB token. Tasks 1, 2 and 6 touch no shared files and may run as parallel subagents; Tasks 4 and 5 both edit `snapshot.ts` and `live.ts`, so run them one after the other.
 
 ## Verification
 
