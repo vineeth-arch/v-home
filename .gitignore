@@ -6,3 +6,5 @@ build
 supabase/.temp
 .DS_Store
 *.zip
+
+!.env.example

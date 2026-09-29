@@ -7,7 +7,9 @@
 - [x] Phase 0 setup (repo, configs, design system, file:// IIFE render verified)
 - [x] Phase 1 TV shell, focus engine (overlay scopes), platform + timer adapters (all unverified on TV)
 - [x] Phase 3 screens, rituals, Quick controls on fixtures; render-gated at 1920x1080; impeccable critique 26/40 (fixes applied); entry-only motion pass
-- [ ] Phase 4 Supabase + phone companion (next; Stop point A for cloud project)
+- [~] Phase 4: DONE backend (schema, RLS, RPCs, storage policy, 39 pgTAP tests pass locally on ports 553xx; other local stack `di-form-engine` uses 543xx, do not stop it). TODO client data layer + phone app.
+  - Local Supabase start command: `supabase start -x logflare,vector,imgproxy,mailpit,studio,postgres-meta,supavisor,edge-runtime` (full stack times out on this machine).
+  - Finding: new Supabase needs explicit GRANTs to `authenticated` (added in 0002).
 - [ ] Phase 5 TMDB + weather
 - [ ] Phase 2/6 TV gate + packaging (blocked on LGTV step 10). Untested on hardware: everything.
 - Known gaps: fonts are system stacks (self-hosted woff2 not added yet); phone viewport (390px) checks not applicable until Phase 4.
