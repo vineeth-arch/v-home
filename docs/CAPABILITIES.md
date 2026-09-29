@@ -9,9 +9,14 @@ TV: LG 43NU885BPLA, firmware 43.04.26, webOS SDK 11.0.1. Installed as `com.desig
 | Anonymous sign-in + pairing code (stable, 6 chars) | VERIFIED | cloud DB: code approved 85 s after issue; TV became a paired display |
 | Household content appears on TV after pairing | VERIFIED | user confirmed |
 | Remote arrows move focus; OK activates; Back returns | VERIFIED | user confirmed all three |
+| Pairing survives an in-place app upgrade (`install-tv.sh`) | VERIFIED (2x) | cloud DB: no new TV session after either reinstall, one display row |
 | Pairing survives closing and reopening the app | NOT VERIFIED | |
 | Pairing survives a TV restart | NOT VERIFIED | |
-| Live weather on TV | NOT VERIFIED | built 2026-09-29, needs a TV check |
+| Live weather on TV (Mumbai) | NOT VERIFIED | built and installed 2026-09-29, needs a TV check |
+| Launch-failure message on TV | NOT VERIFIED | |
+| New icon in LG app bar | NOT VERIFIED | installed 2026-09-29 |
+| Power-on into V/HOME (settings only), tests A/B/C | NOT VERIFIED | see docs/OPENING.md |
+| JioHotstar launcher ID | NOT VERIFIED | ID not yet captured; not guessed |
 | Timer: direct call to V/TV Sleep service | NOT VERIFIED | |
 | Timer: launch handoff to V/TV Sleep | NOT VERIFIED | |
 | Launching Netflix / YouTube / Prime / HDMI from the launch strip | NOT VERIFIED | app IDs unproven |

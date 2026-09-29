@@ -400,3 +400,6 @@ Optional parallel split: 5.1 and 5.2 share no files.
 
 ## Blocked / next action (superseded: a git-ignored .env.local now exists via `vercel link`, pointing at the cloud project)
 - Live E2E needs `.env.local` (git-ignored) with `VITE_SUPABASE_URL=http://127.0.0.1:55321`, the local publishable key from `supabase status`, `VITE_PHONE_URL=http://localhost:5173`. The assistant's attempt to generate it was denied by the sandbox; the user must create it or approve.
+
+## Progress 2026-09-29 (late)
+DONE: pairing bug fixes, boot retry, live weather, fonts, icon, launch errors, TV layout prefs + ordered launch strip, docs (recovery, dev-mode, limitations, opening). Remaining plan: docs/PLAN-rev3.md (Task 8 JioHotstar needs the app id from the TV; Task 10b tests; apps screen; Task 5 reflections/idea convert/weekly; Task 4 photos; Task 3 TMDB).

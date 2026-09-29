@@ -5,5 +5,6 @@ Commands: `npm run dev` (phone), `npm run dev:tv`, `npm run check`.
 
 ## Docs
 - [Capabilities (what is verified on the TV)](docs/CAPABILITIES.md)
+- [Opening V/HOME by default](docs/OPENING.md)
 - [Recovery](docs/RECOVERY.md) · [Developer Mode](docs/DEV-MODE.md) · [Limitations](docs/LIMITATIONS.md)
 - Install on the TV: `./scripts/build-tv.sh && ./scripts/install-tv.sh`
