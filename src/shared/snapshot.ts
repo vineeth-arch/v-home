@@ -14,7 +14,7 @@ export interface Rows {
   notes: { id: string; body: string; author_id: string }[]
   dreams: { id: string; title: string; why: string; affirmation: string; next_step: string; target_date: string | null; art: string; image_path?: string | null }[]
   ideas: { id: string; title: string; note: string; status: Idea['status']; author_id: string; pinned: boolean; image_path?: string | null }[]
-  watch_entries: { id: string; title: string; type: 'movie' | 'series'; runtime_min: number | null; service: string | null; mood: string | null; summary: string | null; watched: boolean; providers: Record<string, string[]>; providers_updated_at: string | null }[]
+  watch_entries: { id: string; title: string; type: 'movie' | 'series'; runtime_min: number | null; service: string | null; mood: string | null; summary: string | null; watched: boolean; providers: Record<string, string[]>; providers_updated_at: string | null; poster_path?: string | null }[]
   watch_prefs: { entry_id: string; user_id: string; pref: 'want' | 'maybe' | 'pass' }[]
 }
 
@@ -43,7 +43,7 @@ export function toSnapshot(r: Rows, now = Date.now()): Snapshot {
     dreams: r.dreams.map((d): Dream => ({ id: d.id, title: d.title, why: d.why, affirmation: d.affirmation, nextStep: d.next_step, targetDate: d.target_date ?? undefined, art: (ART as readonly string[]).includes(d.art) ? (d.art as Dream['art']) : 'sun', imagePath: d.image_path ?? undefined })),
     ideas: r.ideas.map((i): Idea => ({ id: i.id, title: i.title, note: i.note, status: i.status, author: i.author_id, pinned: i.pinned, imagePath: i.image_path ?? undefined })),
     watch: r.watch_entries.map((w): WatchItem => ({
-      entry: { id: w.id, title: w.title, type: w.type, runtimeMin: w.runtime_min, service: w.service ?? undefined, mood: w.mood ?? undefined, summary: w.summary ?? undefined, watched: w.watched, providers: w.providers, providersUpdatedAt: w.providers_updated_at ?? undefined },
+      entry: { id: w.id, title: w.title, type: w.type, runtimeMin: w.runtime_min, service: w.service ?? undefined, mood: w.mood ?? undefined, summary: w.summary ?? undefined, watched: w.watched, providers: w.providers, providersUpdatedAt: w.providers_updated_at ?? undefined, posterPath: w.poster_path ?? undefined },
       prefs: prefsBy.get(w.id) ?? {},
     })),
     quotes: r.quotes.map((q) => ({ id: q.id, slot: q.slot, text: q.body, author: q.author ?? undefined, source: q.source ?? undefined, favorite: q.favorite })),

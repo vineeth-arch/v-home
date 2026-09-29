@@ -44,7 +44,7 @@ async function fetchRows(c: SupabaseClient, hh: string): Promise<Rows> {
     q(c.from('notes').select('id,body,author_id').order('created_at', { ascending: false })),
     q(c.from('dreams').select('id,title,why,affirmation,next_step,target_date,art,image_path').order('created_at')),
     q(c.from('ideas').select('id,title,note,status,author_id,pinned,image_path').order('created_at', { ascending: false })),
-    q(c.from('watch_entries').select('id,title,type,runtime_min,service,mood,summary,watched,providers,providers_updated_at')),
+    q(c.from('watch_entries').select('id,title,type,runtime_min,service,mood,summary,watched,providers,providers_updated_at,poster_path')),
     q(c.from('watch_prefs').select('entry_id,user_id,pref')),
     q(c.from('quotes').select('id,slot,body,author,source,favorite').eq('hidden', false)),
     q(c.from('ritual_selections').select('day,payload').eq('slot', 'weekly').order('day', { ascending: false }).limit(1)),

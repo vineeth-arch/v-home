@@ -10,7 +10,7 @@ export interface TaskItem { id: string; title: string; owner: 'both' | string; k
 export interface Dream { id: string; title: string; why: string; affirmation: string; nextStep: string; targetDate?: string; art: 'sun' | 'hills' | 'sea' | 'window'; imagePath?: string }
 export interface NoteItem { id: string; text: string; author: string }
 export interface Idea { id: string; title: string; note: string; status: 'new' | 'discuss' | 'planned' | 'archived'; author: string; pinned?: boolean; imagePath?: string }
-export interface WatchItem { entry: WatchEntry & { summary?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
+export interface WatchItem { entry: WatchEntry & { summary?: string; posterPath?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
 
 export interface Snapshot {
   household: { id: string; name: string; tz: string; hiddenReflections: string[]; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[]; customApps: PinnedApp[]; prefs: TvPrefs }

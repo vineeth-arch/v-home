@@ -109,20 +109,27 @@ export function OurHome() {
 }
 
 function Detail({ item, onClose }: { item: WatchItem; onClose: () => void }) {
-  const { snap, launch } = useApp()
+  const { snap, launch, tz } = useApp()
+  const [posterFailed, setPosterFailed] = useState(false)
   useLayer('detail', true, onClose)
   const e = item.entry
+  const groups = ([['Subscription', e.providers?.flatrate], ['Rent', e.providers?.rent], ['Buy', e.providers?.buy]] as const).filter((g) => g[1]?.length)
   return (
-    <div className="overlay"><div className="panel">
-      <h2>{e.title}</h2>
-      <div className="dim small">{e.type === 'series' ? 'Series' : 'Movie'} · {e.runtimeMin ? `${e.runtimeMin} min${e.type === 'series' ? ' / episode' : ''}` : 'Runtime unknown'} · {e.service ?? 'Service not set'}</div>
-      <p>{e.summary}</p>
-      <div className="presets">{snap.household.people.map((p) => <span key={p.id} className={`pill ${item.prefs[p.id] ?? ''}`}>{p.name}: {item.prefs[p.id] ?? 'no vote'}</span>)}</div>
-      <div className="presets">
-        <Btn id="d-open" scope="detail" initial className="primary" onClick={() => { const a = appForService(e.service); void (a ? launch(a.id, a.label) : launch('', e.service ?? 'this service')) }}>Open app</Btn>
-        <Btn id="d-close" scope="detail" className="ghost" onClick={onClose}>Back</Btn>
+    <div className="overlay"><div className="panel" style={{ flexDirection: 'row', gap: 48 }}>
+      {e.posterPath && !posterFailed && <img src={`https://image.tmdb.org/t/p/w342${e.posterPath}`} alt="" onError={() => setPosterFailed(true)} style={{ width: 300, height: 450, objectFit: 'cover', borderRadius: 20, flex: 'none', alignSelf: 'center' }} />}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        <h2>{e.title}</h2>
+        <div className="dim small">{e.type === 'series' ? 'Series' : 'Movie'} · {e.runtimeMin ? `${e.runtimeMin} min${e.type === 'series' ? ' / episode' : ''}` : 'Runtime unknown'} · {e.service ?? 'Service not set'}</div>
+        {e.summary && <p className="clamp2" style={{ margin: 0 }}>{e.summary}</p>}
+        <div className="presets">{snap.household.people.map((p) => <span key={p.id} className={`pill ${item.prefs[p.id] ?? ''}`}>{p.name}: {item.prefs[p.id] ?? 'no vote'}</span>)}</div>
+        {groups.length > 0 && <div className="small">{groups.map(([label, names]) => <div key={label}><span className="dim">{label}: </span>{names!.join(', ')}</div>)}
+          {e.providersUpdatedAt && <div className="dim">Availability as of {fmtDay(e.providersUpdatedAt, tz)}</div>}</div>}
+        <div className="presets">
+          <Btn id="d-open" scope="detail" initial className="primary" onClick={() => { const a = appForService(e.service); void (a ? launch(a.id, a.label) : launch('', e.service ?? 'this service')) }}>Open app</Btn>
+          <Btn id="d-close" scope="detail" className="ghost" onClick={onClose}>Back</Btn>
+        </div>
+        {(e.posterPath || groups.length > 0) && <div className="credit">Availability may be out of date. This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming data from JustWatch.</div>}
       </div>
-      <div className="credit">Availability hints may be out of date. Data from TMDB · Provider data from JustWatch. This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
     </div></div>
   )
 }

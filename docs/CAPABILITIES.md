@@ -21,4 +21,7 @@ TV: LG 43NU885BPLA, firmware 43.04.26, webOS SDK 11.0.1. Installed as `com.desig
 | Timer: launch handoff to V/TV Sleep | NOT VERIFIED | |
 | Launching Netflix / YouTube / Prime / HDMI from the launch strip | NOT VERIFIED | app IDs unproven |
 | Quick Access number-button shortcut | NOT VERIFIED | |
+| Apps screen (plain text list) and launch of listed apps | NOT VERIFIED | built 2026-09-30; app IDs unproven except by test |
+| Photos on TV (signed URL, offline cache) | VERIFIED in desktop preview only | not yet on the TV |
+| TMDB search (needs TMDB token set by owner) | NOT VERIFIED with real TMDB | function deployed; auth paths tested (401/403/503) |
 | Volume, mute, picture controls | NOT SUPPORTED in UI | hidden until verified |

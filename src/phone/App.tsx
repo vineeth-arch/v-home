@@ -10,6 +10,7 @@ import { LaunchStrip, MoreApps, TvLayout } from './TvLayout'
 import { sanitizeCustomApps } from '../shared/apps'
 import { Reflections } from './Reflections'
 import { Weekly } from './Weekly'
+import { TmdbSearch, refreshAvailability } from './TmdbSearch'
 import { ideaToDream, ideaToTask } from '../shared/convert'
 
 const qs = new URLSearchParams(location.search)
@@ -41,16 +42,22 @@ function Onboarding({ onDone }: { onDone: () => void }) {
 
 function Watch({ hh, me, people }: { hh: string; me: string; people: { id: string; name: string }[] }) {
   const [prefs, setPrefs] = useState<Awaited<ReturnType<typeof listPrefs>>>([])
-  const [tick, setTick] = useState(0)
+  const [tick, setTick] = useState(0); const [region, setRegion] = useState('IN'); const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   useEffect(() => { void listPrefs().then(setPrefs) }, [tick])
-  return <Crud e={ENTITIES.watch_entries} hh={hh} me={me} decorate={(r: Row) => (
-    <div className="row" style={{ marginBottom: 6 }}>
-      {(['want', 'maybe', 'pass'] as const).map((p) => {
-        const mine = prefs.find((x) => x.entry_id === r.id && x.user_id === me)?.pref
-        return <button key={p} className={`pbtn ${mine === p ? 'on' : ''}`} onClick={async () => { await setPref(r.id, hh, me, p); setTick(tick + 1) }}>{p}</button>
-      })}
-      <span className="dim">{people.filter((x) => x.id !== me).map((x) => `${x.name}: ${prefs.find((q) => q.entry_id === r.id && q.user_id === x.id)?.pref ?? 'no vote'}`).join(' · ')}</span>
-    </div>)} />
+  useEffect(() => { void getHousehold().then((h) => setRegion(String(h.settings.region ?? 'IN'))).catch(() => {}) }, [])
+  return <div>
+    <TmdbSearch hh={hh} region={region} onAdded={() => setTick((t) => t + 1)} />
+    {msg && <div className={msg.ok ? 'ok' : 'err'}>{msg.text}</div>}
+    <Crud key={tick} e={ENTITIES.watch_entries} hh={hh} me={me} decorate={(r: Row) => (
+      <div className="row" style={{ marginBottom: 6 }}>
+        {(['want', 'maybe', 'pass'] as const).map((p) => {
+          const mine = prefs.find((x) => x.entry_id === r.id && x.user_id === me)?.pref
+          return <button key={p} className={`pbtn ${mine === p ? 'on' : ''}`} onClick={async () => { await setPref(r.id, hh, me, p); setTick(tick + 1) }}>{p}</button>
+        })}
+        {r.tmdb_id != null && <button className="pbtn" onClick={async () => { setMsg(await refreshAvailability(hh, r, region)); setTick((t) => t + 1) }}>Refresh availability</button>}
+        <span className="dim">{people.filter((x) => x.id !== me).map((x) => `${x.name}: ${prefs.find((q) => q.entry_id === r.id && q.user_id === x.id)?.pref ?? 'no vote'}`).join(' · ')}</span>
+      </div>)} />
+  </div>
 }
 
 function Ideas({ hh, me }: { hh: string; me: string }) {
@@ -111,6 +118,7 @@ function Settings({ hh, me, onSignOut }: { hh: string; me: Me; onSignOut: () => 
     <div className="row"><input value={city} onChange={(e) => setCity(e.target.value)} style={{ flex: 1 }} placeholder="Search city" />
       <button className="pbtn" onClick={async () => { try { const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=5`); setHits(((await r.json()).results ?? [])) } catch { setMsg('City search unavailable.') } }}>Search</button></div>
     {hits.map((x) => <button key={`${x.latitude}${x.longitude}`} className="item" onClick={() => { void patchSettings({ city: x.name, lat: x.latitude, lon: x.longitude, region: x.country_code }); setHits([]) }}>{x.name}{x.admin1 ? `, ${x.admin1}` : ''} · {x.country_code}</button>)}
+    <h2>Streaming region</h2><div className="dim">Two-letter country code for where titles stream (IN for India).</div><input defaultValue={String(h.settings.region ?? 'IN')} maxLength={2} onBlur={(e) => { const v = e.target.value.trim().toUpperCase(); if (/^[A-Z]{2}$/.test(v) && v !== h.settings.region) void patchSettings({ region: v }) }} style={{ maxWidth: 100, textTransform: 'uppercase' }} />
     <h2>TV launch strip</h2><LaunchStrip pinned={pinned as PinnedApp[]} onChange={(next) => void patchSettings({ pinnedApps: next })} />
     <h2>More apps</h2><MoreApps apps={sanitizeCustomApps(h.settings.customApps)} onChange={(next) => void patchSettings({ customApps: next })} />
     <h2>TV layout</h2><div className="dim">The layout stays fixed. These tune it.</div>

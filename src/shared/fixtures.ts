@@ -51,7 +51,7 @@ export const fixtureSnapshot = (): Snapshot => ({
     { id: 'i8', title: 'Old sofa', note: 'Donate.', status: 'archived', author: 'p1' },
   ],
   watch: [
-    { entry: { id: 'w1', title: 'A Quiet Harbor', type: 'movie', runtimeMin: 96, service: 'Netflix', mood: 'calm', summary: 'A fisherman and a stranger share one winter.' }, prefs: { p1: 'want', p2: 'want' } },
+    { entry: { id: 'w1', title: 'A Quiet Harbor', type: 'movie', runtimeMin: 96, service: 'Netflix', mood: 'calm', summary: 'A fisherman and a stranger share one winter.', providers: { flatrate: ['Netflix', 'JioHotstar'], rent: ['Apple TV'] }, providersUpdatedAt: new Date().toISOString() }, prefs: { p1: 'want', p2: 'want' } },
     { entry: { id: 'w2', title: 'Kitchen Diaries', type: 'series', runtimeMin: 42, service: 'Prime Video', mood: 'light', summary: 'A gentle series about a family restaurant.' }, prefs: { p1: 'maybe', p2: 'want' } },
     { entry: { id: 'w3', title: 'The Long Night', type: 'movie', runtimeMin: 148, service: 'Netflix', mood: 'intense', summary: 'A thriller across a single night.' }, prefs: { p1: 'want', p2: 'pass' } },
     { entry: { id: 'w4', title: 'Hills of Home', type: 'movie', runtimeMin: null, service: 'YouTube', mood: 'calm', summary: 'A documentary about mountain villages.' }, prefs: { p1: 'want', p2: 'maybe' } },
