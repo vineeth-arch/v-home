@@ -190,31 +190,52 @@ export function Ideas() {
 }
 
 export function Settings() {
-  const { snap, ctrl, setOverlay, platform } = useApp()
+  const { snap, ctrl, setOverlay, platform, live } = useApp()
+  const [confirmUnpair, setConfirmUnpair] = useState(false)
   const rows: [string, string][] = [
     ['Household', `${snap.household.name} · ${snap.household.people.map((p) => p.name).join(', ')}`],
     ['Timezone', snap.household.tz],
     ['Timer path', `${ctrl.label}${ctrl.verified ? '' : ' (not yet verified on this TV)'}`],
-    ['Data', platform.simulated ? 'Sample data (simulation)' : 'Household cloud'],
+    ['Data', live ? `Household cloud · cache: ${live.cacheBackend || 'starting'}` : 'Sample data (simulation)'],
     ['Last sync', new Date(snap.syncedAt).toLocaleTimeString()],
     ['Volume, sound, picture', 'Not shown: only controls verified on this TV appear in Quick controls.'],
   ]
   return <>
     <div className="card">{rows.map(([a, b]) => <div className="row" key={a}><span className="t">{a}</span><span>{b}</span></div>)}</div>
-    <div className="presets"><Btn id="set-unpair" className="ghost" onClick={() => setOverlay('pairing')}>Unpair this TV</Btn></div>
+    <div className="presets">
+      {!confirmUnpair
+        ? <Btn id="set-unpair" className="ghost" onClick={() => setConfirmUnpair(true)}>Unpair this TV</Btn>
+        : <><span className="small dim" style={{ alignSelf: 'center' }}>This TV will forget the household.</span>
+            <Btn id="set-unpair-no" initial className="ghost" onClick={() => setConfirmUnpair(false)}>Keep paired</Btn>
+            <Btn id="set-unpair-yes" className="ghost" onClick={() => (live ? void live.unpair() : setOverlay('pairing'))}>Yes, unpair</Btn></>}
+    </div>
   </>
 }
 
+const phoneUrl = (import.meta.env.VITE_PHONE_URL as string | undefined) ?? 'https://vhome.example'
+
+function PairCard({ code, note, onBack }: { code: string; note: string; onBack?: () => void }) {
+  const svg = useMemo(() => { const q = qrcode(0, 'M'); q.addData(`${phoneUrl}/pair?code=${code}`); q.make(); return q.createSvgTag({ cellSize: 6, margin: 0, scalable: true }) }, [code])
+  return (
+    <div className="panel" style={{ flexDirection: 'row', gap: 60, alignItems: 'center' }}>
+      <div><h2>Pair this TV</h2><p className="dim">On your phone, open V/HOME, then Displays, and enter this code or scan the QR.</p><div className="code">{code || '…'}</div>
+        <div className="dim small">{note}</div>
+        {onBack && <div className="presets" style={{ marginTop: 16 }}><Btn id="pair-close" scope="pairing" initial onClick={onBack}>Back</Btn></div>}</div>
+      <div className="qr" dangerouslySetInnerHTML={{ __html: svg }} />
+    </div>
+  )
+}
+
+/** Simulation preview opened from Settings. */
 export function Pairing({ onClose }: { onClose: () => void }) {
   useLayer('pairing', true, onClose)
-  const code = 'K7M2QX' // simulation only; real code comes from start_pairing() in Phase 4
-  const svg = useMemo(() => { const q = qrcode(0, 'M'); q.addData(`https://vhome.example/pair?code=${code}`); q.make(); return q.createSvgTag({ cellSize: 6, margin: 0, scalable: true }) }, [])
-  return (
-    <div className="overlay"><div className="panel" style={{ flexDirection: 'row', gap: 60, alignItems: 'center' }}>
-      <div><h2>Pair this TV</h2><p className="dim">On your phone, open V/HOME → Displays and enter this code or scan the QR.</p><div className="code">{code}</div>
-        <div className="dim small">Simulation code. The real code expires after 10 minutes.</div>
-        <div className="presets" style={{ marginTop: 16 }}><Btn id="pair-close" scope="pairing" initial onClick={onClose}>Back</Btn></div></div>
-      <div className="qr" dangerouslySetInnerHTML={{ __html: svg }} />
-    </div></div>
-  )
+  return <div className="overlay"><PairCard code="K7M2QX" note="Simulation code. The real code expires after 10 minutes." onBack={onClose} /></div>
+}
+
+/** Live: shown whenever this TV is not paired (first run, revoked, or unpaired). */
+export function PairingGate() {
+  const { live } = useApp()
+  return <div className="app" style={{ display: 'grid', placeItems: 'center' }}>
+    <PairCard code={live?.code ?? ''} note={live?.status === 'booting' ? 'Connecting…' : live?.offline ? 'Cannot reach the household cloud. Retrying…' : 'The code expires after 10 minutes and refreshes on its own.'} />
+  </div>
 }

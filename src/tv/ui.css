@@ -98,3 +98,4 @@
 .screen-in { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 24px; animation: fade-in calc(var(--dur) * .8) var(--ease-out); }
 .card-in { animation: rise-in var(--dur) var(--ease-out); }
 .btn:active { transform: scale(0.97); }
+.offline { position: absolute; left: var(--safe); right: var(--safe); bottom: 24px; text-align: center; color: var(--amber); font-size: 26px; }

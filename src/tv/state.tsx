@@ -3,6 +3,8 @@ import { fixtureSnapshot, fixtureWeather } from '../shared/fixtures'
 import { emptySnapshot, type Snapshot } from '../shared/model'
 import { DEFAULT_WINDOWS, resolveMode, shouldApplyScheduledMode, type Mode } from '../shared/modes'
 import { createPlatform, type Platform } from '../adapters/platform'
+import { supabaseConfigured } from '../shared/supabase'
+import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
 
 export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'settings'
@@ -16,6 +18,7 @@ export interface AppState {
   platform: Platform; ctrl: TimerController; timerState: TimerState | 'unavailable'; refreshTimer(): Promise<void>
   toggleTask(id: string): void
   weather: typeof fixtureWeather | null
+  live: Live | null // null = simulation (fixtures)
 }
 const Ctx = createContext<AppState | null>(null)
 export const useApp = () => useContext(Ctx)!
@@ -24,7 +27,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const platform = useMemo(createPlatform, [])
   const ctrl = useMemo(() => new TimerController(platform.simulated ? new MockTimer() : new LunaTimer(platform)), [platform])
   // ?empty=1 previews a brand-new household (simulation only)
-  const [snap, setSnap] = useState<Snapshot>(() => (new URLSearchParams(location.search).has('empty') ? emptySnapshot() : fixtureSnapshot()))
+  const isLive = supabaseConfigured && !new URLSearchParams(location.search).has('sim')
+  const live = useLive(isLive)
+  const [simSnap, setSnap] = useState<Snapshot>(() => (new URLSearchParams(location.search).has('empty') ? emptySnapshot() : fixtureSnapshot()))
+  const snap = isLive ? live.snapshot ?? emptySnapshot() : simSnap
   const [now, setNow] = useState(() => new Date())
   const [manualMode, setManualMode] = useState<Mode | null>(null)
   const [applied, setApplied] = useState<Mode>(() => resolveMode(new Date(), snap.household.tz, DEFAULT_WINDOWS))
@@ -61,10 +67,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { clearInterval(tick); document.removeEventListener('visibilitychange', vis) }
   }, [refreshTimer])
 
-  const toggleTask = useCallback((id: string) => setSnap((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) })), [])
+  // Live: TV may only complete a task (server-enforced). Simulation toggles locally.
+  const toggleTask = useCallback((id: string) => {
+    if (isLive) { if (!snap.tasks.find((t) => t.id === id)?.done) void live.completeTask(id); return }
+    setSnap((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }))
+  }, [isLive, live, snap.tasks])
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, overlay, setOverlay,
-    platform, ctrl, timerState, refreshTimer, toggleTask, weather: snap.household.city ? fixtureWeather : null,
+    platform, ctrl, timerState, refreshTimer, toggleTask, weather: !isLive && snap.household.city ? fixtureWeather : null, live: isLive ? live : null,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -7,7 +7,7 @@
 - [x] Phase 0 setup (repo, configs, design system, file:// IIFE render verified)
 - [x] Phase 1 TV shell, focus engine (overlay scopes), platform + timer adapters (all unverified on TV)
 - [x] Phase 3 screens, rituals, Quick controls on fixtures; render-gated at 1920x1080; impeccable critique 26/40 (fixes applied); entry-only motion pass
-- [~] Phase 4: DONE backend (schema, RLS, RPCs, storage policy, 39 pgTAP tests pass locally on ports 553xx; other local stack `di-form-engine` uses 543xx, do not stop it). TODO client data layer + phone app.
+- [~] Phase 4: DONE backend (schema, RLS, RPCs, storage policy, 39 pgTAP tests pass locally on ports 553xx; other local stack `di-form-engine` uses 543xx, do not stop it). DONE client data layer (snapshot mapper, sync engine, cache, TV live hook + pairing gate, display_unpair RPC; 41 pgTAP tests). TODO: live E2E run (needs .env.local, see below), phone app.
   - Local Supabase start command: `supabase start -x logflare,vector,imgproxy,mailpit,studio,postgres-meta,supavisor,edge-runtime` (full stack times out on this machine).
   - Finding: new Supabase needs explicit GRANTs to `authenticated` (added in 0002).
 - [ ] Phase 5 TMDB + weather
@@ -392,3 +392,6 @@ Optional parallel split: 5.1 and 5.2 share no files.
 - **A.** Supabase cloud project (create or approve), turn on anonymous sign-in, turn off email confirmation, and enter the TMDB token himself with `supabase secrets set TMDB_TOKEN=…`.
 - **B.** Vercel project link, preview deploy, then approval for the production deploy.
 - **C.** Every physical TV step, only after LGTV step 10 closes. Route (c) needs separate approval.
+
+## Blocked / next action
+- Live E2E needs `.env.local` (git-ignored) with `VITE_SUPABASE_URL=http://127.0.0.1:55321`, the local publishable key from `supabase status`, `VITE_PHONE_URL=http://localhost:5173`. The assistant's attempt to generate it was denied by the sandbox; the user must create it or approve.

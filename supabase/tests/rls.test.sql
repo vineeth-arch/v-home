@@ -1,5 +1,5 @@
 begin;
-select plan(39);
+select plan(41);
 
 -- identities -------------------------------------------------------------
 insert into auth.users (id, aud, role, email, is_anonymous) values
@@ -125,6 +125,13 @@ select pg_temp.act_as('00000000-0000-0000-0000-00000000a11c');
 select lives_ok(format($$select public.revoke_display(%L, '00000000-0000-0000-0000-000000007001')$$, current_setting('t.hh1')), 'alice revokes the TV');
 select pg_temp.act_as('00000000-0000-0000-0000-000000007001', true);
 select is((select count(*) from public.events)::int, 0, 'revoked TV sees nothing');
+
+-- a TV can unpair itself (fresh pairing first)
+reset role;
+insert into public.members (household_id, user_id, role, display_name) values (current_setting('t.hh1')::uuid, '00000000-0000-0000-0000-000000007002', 'display', 'TV2');
+select pg_temp.act_as('00000000-0000-0000-0000-000000007002', true);
+select lives_ok($$select public.display_unpair()$$, 'TV unpairs itself');
+select is(public.pairing_status(), null::uuid, 'unpaired TV has no household');
 
 -- anon role (no login) ----------------------------------------------------
 reset role;

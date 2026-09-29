@@ -10,7 +10,7 @@ export interface Idea { id: string; title: string; note: string; status: 'new' |
 export interface WatchItem { entry: WatchEntry & { summary?: string; providers?: { flatrate?: string[]; rent?: string[]; buy?: string[] }; providersUpdatedAt?: string }; prefs: Record<string, Pref | undefined> }
 
 export interface Snapshot {
-  household: { name: string; tz: string; people: Person[]; city?: string; pinnedApps: PinnedApp[] }
+  household: { name: string; tz: string; people: Person[]; city?: string; lat?: number; lon?: number; region?: string; pinnedApps: PinnedApp[] }
   events: EventItem[]; tasks: TaskItem[]; dreams: Dream[]; notes: NoteItem[]; ideas: Idea[]; watch: WatchItem[]
   syncedAt: number
 }
