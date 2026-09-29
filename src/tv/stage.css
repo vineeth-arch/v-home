@@ -1,0 +1,5 @@
+.stage-host { position: fixed; inset: 0; overflow: hidden; background: #000; }
+#stage { position: absolute; left: 50%; top: 50%; overflow: hidden; background: var(--bg); transform-origin: center; padding: var(--safe); font-size: var(--fs-body); }
+.sim-chip { position: absolute; top: 24px; right: 24px; padding: 6px 16px; border: 2px solid var(--amber); border-radius: 999px; color: var(--amber); font-size: 20px; letter-spacing: .12em; }
+.focusable { outline: 3px solid transparent; outline-offset: 4px; transition: transform var(--dur), outline-color var(--dur); cursor: pointer; }
+.focusable[data-focused] { outline-color: var(--amber); transform: scale(1.05); border-radius: calc(var(--radius) + 6px); }

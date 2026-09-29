@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 // and the html tag is rewritten to a plain deferred-at-end-of-body script.
 const tvHtml = (): Plugin => ({
   name: 'tv-html',
+  apply: 'build',
   enforce: 'post',
   transformIndexHtml(html) {
     const m = html.match(/<script[^>]*src="([^"]+)"[^>]*><\/script>/)
