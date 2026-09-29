@@ -10,10 +10,10 @@
 .btn.on { border-color: var(--sage); color: var(--sage); }
 
 /* header */
-.hdr { display: flex; align-items: center; gap: 28px; height: 110px; flex: none; white-space: nowrap; }
+.hdr { display: flex; align-items: center; gap: 22px; height: 110px; flex: none; white-space: nowrap; }
 .hdr .clock { font-family: var(--serif); font-size: 72px; line-height: 1; letter-spacing: -.02em; }
 .hdr .when { display: flex; flex-direction: column; gap: 4px; }
-.hdr .greet { font-size: 26px; color: var(--text-dim); max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.hdr .greet { font-size: 26px; color: var(--text-dim); max-width: 270px; overflow: hidden; text-overflow: ellipsis; }
 .hdr .sp { flex: 1; }
 .hdr h1 { font-family: var(--serif); font-weight: 500; font-size: var(--fs-h1); margin: 0; }
 .wx { text-align: right; font-size: 26px; line-height: 1.25; }

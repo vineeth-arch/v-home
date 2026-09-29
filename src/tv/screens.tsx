@@ -27,9 +27,10 @@ export function Header({ title }: { title?: string }) {
       </>}
       <div className="sp" />
       {weather ? (
-        <div className="wx"><b>{weather.tempC}°</b> {weather.label}<br />
-          <span className="dim">{mode === 'evening' ? `Tomorrow H${weather.tomorrow.hiC}° L${weather.tomorrow.loC}° · Rain ${weather.tomorrow.rainPct}%` : `H${weather.hiC}° L${weather.loC}° · Rain ${weather.rainPct}%`}</span></div>
-      ) : <div className="wx dim">Set up weather on your phone</div>}
+        <div className="wx">{weather.showCurrent && <><b>{weather.tempC}°</b> {weather.label}<br /></>}
+          <span className="dim">{mode === 'evening' ? `Tomorrow H${weather.tomorrow.hiC}° L${weather.tomorrow.loC}° · Rain ${weather.tomorrow.rainPct}%` : `H${weather.hiC}° L${weather.loC}° · Rain ${weather.rainPct}%`}</span>
+          {weather.stale && <><br /><span className="dim">Updated {fmtTime(weather.fetchedAt, tz)}</span></>}</div>
+      ) : <div className="wx dim">{snap.household.lat == null ? 'Set up weather on your phone' : 'Weather loading…'}</div>}
       <Btn id="hdr-mode" className="chip" onClick={cycle}>{manualMode ? MODE_LABEL[mode] : `Auto · ${MODE_LABEL[mode]}`}</Btn>
       <Btn id="hdr-quick" className="chip" onClick={() => setOverlay('quick')}>Quick controls</Btn>
       {screen !== 'settings' && <Btn id="hdr-settings" className="chip ghost" onClick={() => go('settings')}>Settings</Btn>}
@@ -196,6 +197,7 @@ export function Settings() {
     ['Household', `${snap.household.name} · ${snap.household.people.map((p) => p.name).join(', ')}`],
     ['Timezone', snap.household.tz],
     ['Timer path', `${ctrl.label}${ctrl.verified ? '' : ' (not yet verified on this TV)'}`],
+    ['Weather', 'Weather by Open-Meteo'],
     ['Data', live ? `Household cloud · cache: ${live.cacheBackend || 'starting'}` : 'Sample data (simulation)'],
     ['Last sync', new Date(snap.syncedAt).toLocaleTimeString()],
     ['Volume, sound, picture', 'Not shown: only controls verified on this TV appear in Quick controls.'],

@@ -6,6 +6,7 @@ import { createPlatform, type Platform } from '../adapters/platform'
 import { supabaseConfigured } from '../shared/supabase'
 import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
+import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
 export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'settings'
 export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing'
@@ -17,11 +18,29 @@ export interface AppState {
   overlay: Overlay; setOverlay(o: Overlay): void
   platform: Platform; ctrl: TimerController; timerState: TimerState | 'unavailable'; refreshTimer(): Promise<void>
   toggleTask(id: string): void
-  weather: typeof fixtureWeather | null
+  weather: WeatherView | null
   live: Live | null // null = simulation (fixtures)
 }
 const Ctx = createContext<AppState | null>(null)
 export const useApp = () => useContext(Ctx)!
+
+/** 15-minute foreground refresh; keeps last good reading on failure and marks it stale. */
+function useWeather(lat: number | undefined, lon: number | undefined, tz: string, now: Date): WeatherView | null {
+  const [w, setW] = useState<Weather | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (lat == null || lon == null) { setW(null); return }
+    setW(loadCached(lat, lon))
+    let stop = false
+    const load = () => fetchWeather(lat, lon, tz).then((x) => { if (!stop) { setW(x); setFailed(false); saveCached(lat, lon, x) } }).catch(() => { if (!stop) setFailed(true) })
+    load()
+    const id = setInterval(() => { if (!document.hidden) load() }, 15 * 60_000)
+    const vis = () => { if (!document.hidden) load() }
+    document.addEventListener('visibilitychange', vis)
+    return () => { stop = true; clearInterval(id); document.removeEventListener('visibilitychange', vis) }
+  }, [lat, lon, tz])
+  return weatherView(w, now.getTime(), failed)
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const platform = useMemo(createPlatform, [])
@@ -41,6 +60,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const lastInput = useRef(Date.now())
 
   const tz = snap.household.tz
+  const liveWeather = useWeather(isLive ? snap.household.lat : undefined, isLive ? snap.household.lon : undefined, snap.household.tz, now)
   const mode = manualMode ?? applied
 
   useEffect(() => { document.documentElement.dataset.mode = mode }, [mode])
@@ -74,7 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [isLive, live, snap.tasks])
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, overlay, setOverlay,
-    platform, ctrl, timerState, refreshTimer, toggleTask, weather: !isLive && snap.household.city ? fixtureWeather : null, live: isLive ? live : null,
+    platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
