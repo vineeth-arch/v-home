@@ -16,9 +16,18 @@ export function sanitizeCustomApps(raw: unknown): PinnedApp[] {
   return out
 }
 
-/** Everything the Apps screen lists: built-in candidates, then the household's own, no duplicate ids. */
-export function allApps(custom: PinnedApp[]): PinnedApp[] {
+/** listLaunchPoints response -> {id,label}, A–Z. Malformed entries dropped. Parsing idea from webos-custom-home (MIT). */
+export function parseLaunchPoints(data: Record<string, unknown>): PinnedApp[] {
+  const lp = Array.isArray(data.launchPoints) ? data.launchPoints : []
+  return lp.flatMap((x) => {
+    const id = (x as { id?: unknown }).id, title = (x as { title?: unknown }).title
+    return isValidAppId(id) && typeof title === 'string' && title.trim() ? [{ id, label: title.trim(), verified: false }] : []
+  }).sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/** Everything the Apps screen lists: built-in candidates, the household's own, then apps found on the TV; no duplicate ids. */
+export function allApps(custom: PinnedApp[], installed: PinnedApp[] = []): PinnedApp[] {
   const seen = new Set<string>(); const out: PinnedApp[] = []
-  for (const a of [...CANDIDATE_APPS, ...custom]) if (!seen.has(a.id)) { seen.add(a.id); out.push(a) }
+  for (const a of [...CANDIDATE_APPS, ...custom, ...installed]) if (!seen.has(a.id)) { seen.add(a.id); out.push(a) }
   return out
 }

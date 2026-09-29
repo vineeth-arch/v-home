@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { allApps, isValidAppId, MAX_CUSTOM_APPS, sanitizeCustomApps } from './apps'
+import { allApps, isValidAppId, MAX_CUSTOM_APPS, parseLaunchPoints, sanitizeCustomApps } from './apps'
 
 test('app id validation', () => {
   expect(['netflix', 'com.webos.app.hdmi1', 'youtube.leanback.v4'].every(isValidAppId)).toBe(true)
@@ -18,4 +18,9 @@ test('allApps lists candidates then custom, without duplicate ids', () => {
   const list = allApps([{ id: 'netflix', label: 'Dup', verified: false }, { id: 'my.app', label: 'Mine', verified: false }])
   expect(list.filter((a) => a.id === 'netflix').length).toBe(1)
   expect(list[list.length - 1].id).toBe('my.app')
+})
+
+test('launch points: valid ids with titles, A–Z, junk dropped', () => {
+  expect(parseLaunchPoints({ launchPoints: [{ id: 'youtube.leanback.v4', title: 'YouTube' }, { id: 'bad id!', title: 'X' }, { id: 'netflix', title: ' Netflix ' }, { id: 'x.y' }] }).map((a) => a.label)).toEqual(['Netflix', 'YouTube'])
+  expect(parseLaunchPoints({})).toEqual([])
 })

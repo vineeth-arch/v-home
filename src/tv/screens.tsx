@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Btn, DreamPic, fmtDay, fmtTime } from './ui'
 import { useLayer } from './FocusProvider'
 import { useApp, personName, type Screen } from './state'
@@ -6,12 +6,12 @@ import { pickDaily } from '../shared/reflections'
 import { localDate } from '../shared/daily'
 import { upcoming } from '../shared/upcoming'
 import { explainEmpty, pickForUs, topMatches, type Candidate, type Filters } from '../shared/picker'
-import { appsOf, type WatchItem } from '../shared/model'
+import { appsOf, type PinnedApp, type WatchItem } from '../shared/model'
 import { appForService } from '../shared/launch'
 import { heroDream } from '../shared/prefs'
 import { mondayOf } from '../shared/week'
 import { notesForToday, sharedNote } from '../shared/partnerNotes'
-import { allApps } from '../shared/apps'
+import { allApps, parseLaunchPoints } from '../shared/apps'
 import qrcode from 'qrcode-generator'
 
 export const NAV: { id: Screen; label: string }[] = [
@@ -233,9 +233,14 @@ export function Ideas() {
 
 /** Plain text list of apps and inputs. No icons, no ads. Each row uses the same launcher (and error message) as the strip. */
 export function Apps() {
-  const { snap, launch } = useApp()
+  const { snap, launch, platform } = useApp()
   const [page, setPage] = useState(0)
-  const list = allApps(snap.household.customApps)
+  const [installed, setInstalled] = useState<PinnedApp[]>([])
+  useEffect(() => { // apps installed on the TV, if webOS allows this app to list them; otherwise the curated list only
+    if (platform.simulated) return
+    void platform.call('luna://com.webos.applicationManager/listLaunchPoints', {}).then((r) => { if ('ok' in r && r.ok) setInstalled(parseLaunchPoints(r.data)) })
+  }, [platform])
+  const list = allApps(snap.household.customApps, installed)
   const per = 12, pages = Math.max(1, Math.ceil(list.length / per))
   return <>
     <div className="scroll-free"><div className="apps-grid">{list.slice(page * per, page * per + per).map((a, k) => (
