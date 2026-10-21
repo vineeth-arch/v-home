@@ -4,6 +4,16 @@
 
 The app on your daily phone replaces the Mac watcher. While the phone is on your home Wi-Fi it keeps a connection to the LG TV, and when the TV's Home button brings up the LG launcher it launches V/HOME instead, the same as the Python companion does. A foreground-service notification ("Watching TV") shows while it runs, with a Pause/Resume button. The app stops by itself if the phone leaves the Wi-Fi it was using, and starts again when the phone rejoins home Wi-Fi.
 
+Tested on the owner's Samsung SM-A556E (Android 14) and LG TV, 2026-10-21:
+- **Home redirect:** 5 of 5 redirects from YouTube, Prime Video and Live TV, 2.3–6.7 s each. With the screen off, 2 of 2 worked in light Doze. Deep Doze could not be forced while the phone was on USB, so that case is untested.
+- **Wi-Fi off and on:** after Wi-Fi turned off and on twice, watching restarted on its own within 4–14 s with the app closed.
+
+What we learned on the real hardware:
+- **Starting on Wi-Fi.** A network-callback PendingIntent is dropped on this Samsung as soon as the app leaves the screen. The durable trigger is therefore a persisted JobScheduler job that requires the Wi-Fi network (`WifiJob`). The watcher re-arms the job every time it stops because Wi-Fi went away. After "pairing lost" or a settings error it doesn't re-arm, because that would just loop. Opening the app, or tapping Pair, also starts watching directly.
+- **Stuck V/HOME.** Sometimes the TV answers `launch` with success while V/HOME stays hidden in the background. The Mac watcher has the same problem. If V/HOME isn't in front 3 s after a successful launch, the phone closes it and launches it again, all inside the 10 s confirm window.
+- **Logs.** Every step appears in the app's Event log. With a receiver running on the Mac (`python3 android/tools/logsink.py`, default port 8765, writing to `~/Library/Logs/vhome-watch-phone.log`), the phone pushes each event live, and **Send full log to Mac** adds the history and the app's own logcat. Leave the address field empty to turn this off.
+- **Installing updates.** Installing an update by opening the APK on the phone has, at least once, replaced the app and wiped the pairing. `adb install -r` keeps it.
+
 It is pinned to your TV: pairing records the TV's certificate fingerprint, and the app only talks to a device that presents the same certificate.
 
 ## Install

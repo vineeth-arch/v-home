@@ -26,6 +26,7 @@ class WatcherService : Service() {
     private var loop: Job? = null
     @Volatile private var runner: Runner? = null
     @Volatile private var watcher: Watcher? = null
+    @Volatile private var rearm = true
     @Volatile private var line = "Starting"
     private var activeNetwork: Network? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
@@ -74,6 +75,9 @@ class WatcherService : Service() {
     override fun onDestroy() {
         callback?.let { runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         callback = null
+        // Stopped because Wi-Fi went away (or any recoverable reason): arm the job so the next Wi-Fi join
+        // starts watching again. Not after "pairing lost" / bad settings, which would just loop.
+        if (rearm) WifiJob.arm(this)
         scope.cancel()
         super.onDestroy()
     }
@@ -142,7 +146,7 @@ class WatcherService : Service() {
             Watcher(watcherCfg.vhomeId, watcherCfg.homeIds, watcherCfg.doubleHomeEscape)
                 .also { it.paused = watcherCfg.paused; this.watcher = it }
         } catch (e: ConfigError) {
-            setLine("Settings problem: ${e.message}")
+            setLine("Settings problem: ${e.message}"); rearm = false
             stopSelf()
             return
         }
@@ -151,7 +155,7 @@ class WatcherService : Service() {
             var cfg = Prefs.load(this)
             val pin = cfg.pin
             val key = cfg.clientKey
-            if (pin == null || key == null) { setLine("Not paired: open the app and tap Pair"); stopSelf(); return }
+            if (pin == null || key == null) { setLine("Not paired: open the app and tap Pair"); rearm = false; stopSelf(); return }
             val network = HomeNetwork.wifiNetwork(this)
             if (network == null) { setLine("Not on Wi-Fi: stopped"); stopSelf(); return }
             activeNetwork = network
@@ -197,7 +201,7 @@ class WatcherService : Service() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: NotPaired) {
-                setLine("Pairing lost — open the app and tap Pair")
+                setLine("Pairing lost — open the app and tap Pair"); rearm = false
                 stopSelf()
                 return
             } catch (e: PinMismatch) {

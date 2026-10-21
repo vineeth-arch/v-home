@@ -22,6 +22,7 @@ object HomeNetwork {
         } catch (e: RuntimeException) {
             Log.w("HomeNetwork", "register failed", e)
         }
+        WifiJob.arm(ctx) // the durable trigger; the callback above only lives while the app is on screen here
     }
 
     // The TV is on the LAN: match home Wi-Fi even when the router's internet is down.
