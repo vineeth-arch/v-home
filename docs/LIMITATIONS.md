@@ -1,7 +1,7 @@
 # Known limitations
 
 - **Home button and power-on:** V/HOME cannot replace the Home button or open automatically at power-on. See `docs/OPENING.md` for the supported setup.
-- **Sleep timer:** V/TV Sleep is the only timer authority. V/HOME reaches it either directly (not yet verified) or by opening V/TV Sleep, which takes the foreground; press Back to return. A handoff never shows a countdown.
+- **Sleep timer:** V/TV Sleep is the only timer authority. The TV refuses a direct call from V/HOME to the V/TV Sleep service (checked: `denied method ... for category "/"`), so V/HOME opens V/TV Sleep with the request (needs V/TV Sleep 0.1.1+). V/TV Sleep sets the timer, flashes its own confirmation for about a second, then reopens V/HOME with the confirmed result. The status line only shows what V/TV Sleep confirmed, and can be stale if the timer is changed elsewhere. Not yet checked: that the TV actually switches off at the set time.
 - **No overlay above other apps.** Quick controls exist inside V/HOME only.
 - **Volume, sound output and picture presets** are not offered until verified on this TV.
 - **A revoked TV** keeps showing its cached content until it reconnects to the internet.

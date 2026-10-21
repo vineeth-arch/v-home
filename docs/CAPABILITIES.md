@@ -70,3 +70,13 @@ First session with the TV on. Observed by the owner on screen, plus the companio
 | Launcher look (colour tiles, full scrolling list, inputs at the bottom) | Owner reviewed the first version on the TV and asked for bigger tiles, app-coloured backgrounds, the full list and HDMI below; reworked, not yet re-checked |
 | Pairing survives in-place upgrade of 0.2.0 (H2) | NOT CHECKED |
 | Launcher usable with Wi-Fi off (H3), timer (H4), Mac sleep/wake (H5), multi-hour run (H6) | NOT RUN |
+
+## Sleep timer, 2026-10-21 (owner-observed on the TV)
+
+| Item | Result |
+|---|---|
+| Direct service call from V/HOME to V/TV Sleep | DENIED by the TV: `denied method schedule for category "/"` |
+| One-click timer: press a preset, V/TV Sleep confirms, V/HOME reopens with the confirmed time (V/TV Sleep 0.1.1, V/HOME 0.2.1) | VERIFIED working by the owner, including Cancel |
+| 15 min preset | added |
+| TV actually switches off at the set time | NOT CHECKED |
+| Status stays correct if the timer is changed in the V/TV Sleep app or from an iPhone | NOT SUPPORTED: V/HOME only knows the last result V/TV Sleep sent back |
