@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import './launcher.css'
 import { useApp } from './state'
 import { useFocusable, useFocusCtx, useLayer } from './FocusProvider'
-import { Btn } from './ui'
+import { Btn, fmtTime } from './ui'
+import { useTimerActions } from './timerActions'
 import { AppIcon, LauncherEdit } from './LauncherEdit'
 import { fnv1a } from '../shared/daily'
 import { applyLayout, MAX_FAVORITES, WALLPAPERS, type Folder } from '../shared/launcherPrefs'
@@ -26,10 +27,10 @@ function Tile({ id, scope, initial, className = '', onClick, children }: { id: s
 const tint = (e: CatalogEntry) => e.color ?? `hsl(${fnv1a(e.id) % 360} 30% 28%)`
 
 /** Big colour-filled square: the icon's own edge colour is the background, so the tile looks like the app. */
-function Art({ entry }: { entry: CatalogEntry }) {
+function Art({ entry, small }: { entry: CatalogEntry; small?: boolean }) {
   const url = iconUrl(entry)
   const [failed, setFailed] = useState(false)
-  return <span className="l-art" style={{ '--c': tint(entry) } as CSSProperties}>
+  return <span className={`l-art${small ? ' small' : ''}`} style={{ '--c': tint(entry) } as CSSProperties}>
     {url && !failed ? <img src={url} alt="" onError={() => setFailed(true)} />
       : <span className="l-letter" aria-hidden>{(entry.title.trim()[0] ?? '?').toUpperCase()}</span>}
   </span>
@@ -44,8 +45,10 @@ function AppTile({ entry, idPrefix, scope, initial, onOpen }: { entry: CatalogEn
 
 function FolderTile({ folder, apps, initial, onOpen }: { folder: Folder; apps: CatalogEntry[]; initial: boolean; onOpen: () => void }) {
   return <Tile id={`l-folder-${folder.id}`} initial={initial} onClick={onOpen}>
-    <span className="l-art l-folder-art"><span className="l-mini">{apps.slice(0, 4).map((a) => <AppIcon key={a.id} entry={a} size={44} />)}</span></span>
-    <span className="l-lbl"><span className="ttl">{folder.name}</span></span>
+    <span className="l-art l-folder-art"><span className="l-mini">{[0, 1, 2, 3].map((i) => apps[i]
+      ? <span key={apps[i].id} className="l-mini-ico"><Art entry={apps[i]} small /></span>
+      : <span key={i} className="l-mini-ico empty" />)}</span></span>
+    <span className="l-lbl"><span className="ttl">{folder.name}</span><span className="sub">{apps.length === 1 ? '1 app' : `${apps.length} apps`}</span></span>
   </Tile>
 }
 
@@ -75,6 +78,24 @@ function PersonalCard() {
   </div>
 }
 
+const PRESETS = [30, 45, 60, 90]
+/** Sleep-timer shortcuts, always on screen at the right. Uses the same adapter and honest messages as Quick controls. */
+function TimerPanel() {
+  const { timerState, now, tz } = useApp()
+  const { msg, run, verified } = useTimerActions()
+  const status = timerState === 'unavailable' ? 'Timer status unavailable'
+    : timerState.scheduled ? `TV off at ${fmtTime(timerState.shutdownAt, tz)} · ${Math.max(0, Math.ceil((timerState.shutdownAt - now.getTime()) / 60000))} min left` : 'No timer set'
+  return <aside className="l-timer" aria-label="Sleep timer">
+    <div className="l-h"><span>Sleep timer</span></div>
+    <div className="l-tstatus">{status}</div>
+    <div className="l-tbtns">
+      {PRESETS.map((m) => <Tile key={m} id={`l-t-${m}`} className="l-tbtn" onClick={() => void run((a) => a.schedule(m))}><b>{m}</b><span>min</span></Tile>)}
+    </div>
+    <Tile id="l-t-cancel" className="l-tbtn wide ghost" onClick={() => void run((a) => a.cancel())}>Cancel timer</Tile>
+    <div className={`l-tmsg${msg?.warn ? ' warn' : ''}`} role="status">{msg?.text ?? (verified ? '' : 'Not yet verified on this TV')}</div>
+  </aside>
+}
+
 export function Launcher() {
   const { catalog, launcherPrefs: prefs, launch } = useApp()
   const { focusedId } = useFocusCtx()
@@ -95,7 +116,7 @@ export function Launcher() {
   // decided once per mount: a changing `initial` re-registers tiles and steals focus mid-navigation
   const [saved] = useState(readFocus)
   const [initialId] = useState(() => (saved && order.includes(saved) ? saved : order[0]))
-  const dockSlots = Array.from({ length: MAX_FAVORITES }, (_, i) => dock[i])
+  const dockSlots = Array.from({ length: Math.min(MAX_FAVORITES, Math.max(5, dock.length)) }, (_, i) => dock[i])
   const folder = folders.find((f) => f.folder.id === openFolder)
 
   const scroller = useRef<HTMLDivElement>(null)
@@ -116,12 +137,15 @@ export function Launcher() {
           ? <AppTile key={e.id} entry={e} idPrefix="l-dock" initial={`l-dock-${e.id}` === initialId} onOpen={open} />
           : <div key={`s${i}`} className="l-slot" aria-hidden />)}</div>
       </section>
+      {folders.length > 0 && <section className="l-sec">
+        <div className="l-h"><span>Folders</span><span className="l-count">{folders.length}</span></div>
+        <div className="l-grid">{folders.map((f) => <FolderTile key={f.folder.id} folder={f.folder} apps={f.apps} initial={`l-folder-${f.folder.id}` === initialId} onOpen={() => setOpenFolder(f.folder.id)} />)}</div>
+      </section>}
       <section className="l-sec">
-        <div className="l-h"><span>{dock.length ? 'More apps' : 'Apps'}</span><span className="l-count">{grid.length + folders.length}</span></div>
+        <div className="l-h"><span>{dock.length ? 'More apps' : 'Apps'}</span><span className="l-count">{grid.length}</span></div>
         <div className="l-grid">
-          {folders.map((f) => <FolderTile key={f.folder.id} folder={f.folder} apps={f.apps} initial={`l-folder-${f.folder.id}` === initialId} onOpen={() => setOpenFolder(f.folder.id)} />)}
           {grid.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-app" initial={`l-app-${e.id}` === initialId} onOpen={open} />)}
-          {!grid.length && !folders.length && <div className="l-dim">No apps yet. They appear once this TV's list is read.</div>}
+          {!grid.length && <div className="l-dim">{folders.length ? 'Everything else is in your folders.' : 'No apps yet. They appear once this TV\'s list is read.'}</div>}
         </div>
       </section>
       {inputs.length > 0 && <section className="l-sec">
@@ -129,6 +153,7 @@ export function Launcher() {
         <div className="l-grid">{inputs.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-input" initial={`l-input-${e.id}` === initialId} onOpen={open} />)}</div>
       </section>}
     </div>
+    <TimerPanel />
     {folder && <FolderOverlay folder={folder.folder} apps={folder.apps} onClose={() => setOpenFolder(null)} onOpen={open} />}
     {editing && <LauncherEdit onClose={() => setEditing(false)} />}
   </div>

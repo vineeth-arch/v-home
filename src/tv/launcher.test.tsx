@@ -9,7 +9,7 @@ import type { CatalogEntry } from '../shared/catalog'
 const e = (id: string, title: string, kind: 'app' | 'input' = 'app', extra: Partial<CatalogEntry> = {}): CatalogEntry => ({ id, title, kind, icon: null, source: 'curated', system: false, ...extra })
 const CATALOG = [e('netflix', 'Netflix'), e('youtube', 'YouTube'), e('spotify', 'Spotify'), e('prime', 'Prime Video'), e('hdmi1', 'HDMI 1', 'input'), e('helper', 'Helper', 'app', { system: true })]
 
-const app = { catalog: CATALOG, launcherPrefs: DEFAULT_LAUNCHER_PREFS as LauncherPrefs, setLauncherPrefs: vi.fn(), launch: vi.fn(), snap: emptySnapshot(), guest: false, now: new Date('2026-10-21T08:00:00Z'), tz: 'Asia/Kolkata', mode: 'home', live: null, capabilities: {} }
+const app = { catalog: CATALOG, launcherPrefs: DEFAULT_LAUNCHER_PREFS as LauncherPrefs, setLauncherPrefs: vi.fn(), launch: vi.fn(), snap: emptySnapshot(), guest: false, now: new Date('2026-10-21T08:00:00Z'), tz: 'Asia/Kolkata', mode: 'home', live: null, capabilities: {}, timerState: { scheduled: false } as const, ctrl: { verified: false, mutate: vi.fn(), label: 'test' }, refreshTimer: vi.fn() }
 vi.mock('./state', () => ({ useApp: () => app }))
 
 import { FocusProvider } from './FocusProvider'
@@ -30,11 +30,16 @@ beforeEach(() => { host = document.createElement('div'); document.body.append(ho
 afterEach(() => { act(() => root.unmount()); host.remove() })
 
 describe('Launcher', () => {
+  it('shows the sleep-timer shortcuts on the right', () => {
+    mount(<Launcher />)
+    const labels = [...host.querySelectorAll('.l-timer button')].map((b) => b.textContent)
+    expect(labels).toEqual(['30min', '45min', '60min', '90min', 'Cancel timer'])
+  })
   it('renders with the curated catalog and an empty household (no personal card)', () => {
     mount(<Launcher />)
     expect(host.querySelector('.launcher')?.getAttribute('data-wallpaper')).toBe('dusk')
     expect(host.querySelector('.l-card')).toBeNull()
-    expect(host.querySelectorAll('.l-slot')).toHaveLength(6)
+    expect(host.querySelectorAll('.l-slot')).toHaveLength(5)
     expect(host.textContent).toContain('Netflix')
     expect(host.textContent).not.toContain('Helper')
   })

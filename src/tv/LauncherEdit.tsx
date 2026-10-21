@@ -84,7 +84,7 @@ export function LauncherEdit({ onClose }: { onClose: () => void }) {
           <b className="l-edit-sel">{selEntry.title}</b>
           <LBtn id="le-act-earlier" scope={SCOPE} onClick={() => apply(moveStep(draft, catalog, selEntry.id, -1))}>Move earlier</LBtn>
           <LBtn id="le-act-later" scope={SCOPE} onClick={() => apply(moveStep(draft, catalog, selEntry.id, 1))}>Move later</LBtn>
-          <LBtn id="le-act-fav" scope={SCOPE} onClick={() => apply(toggleFavorite(draft, selEntry.id), !draft.favorites.includes(selEntry.id) && draft.favorites.length >= MAX_FAVORITES ? 'Favorites are full (6).' : '')}>
+          <LBtn id="le-act-fav" scope={SCOPE} onClick={() => apply(toggleFavorite(draft, selEntry.id), !draft.favorites.includes(selEntry.id) && draft.favorites.length >= MAX_FAVORITES ? `Favorites are full (${MAX_FAVORITES}).` : '')}>
             {draft.favorites.includes(selEntry.id) ? 'Remove favorite' : 'Add favorite'}</LBtn>
           <LBtn id="le-act-hide" scope={SCOPE} onClick={() => apply(toggleHidden(draft, selEntry.id))}>{draft.hidden.includes(selEntry.id) ? 'Unhide' : 'Hide'}</LBtn>
           {selFolder && <LBtn id="le-act-out" scope={SCOPE} onClick={() => apply(moveToFolder(draft, selEntry.id, null))}>Out of {selFolder.name}</LBtn>}

@@ -72,7 +72,7 @@ test('helpers: moveId, favorites cap, hidden toggle, folder moves', () => {
   expect(moveId(['a', 'b', 'c'], 'a', 9)).toEqual(['b', 'c', 'a'])
   expect(moveId(['a'], 'zz', 1)).toEqual(['a'])
   let p = P()
-  for (let i = 0; i < 8; i++) p = toggleFavorite(p, 'app' + i)
+  for (let i = 0; i < MAX_FAVORITES + 2; i++) p = toggleFavorite(p, 'app' + i)
   expect(p.favorites).toHaveLength(MAX_FAVORITES)
   expect(toggleFavorite(p, 'app0').favorites).not.toContain('app0')
   expect(toggleHidden(toggleHidden(P(), 'aa'), 'aa').hidden).toEqual([])
