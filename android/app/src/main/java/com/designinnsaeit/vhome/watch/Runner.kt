@@ -9,6 +9,9 @@ import org.json.JSONObject
 import java.util.Locale
 
 private val POWER_OFF = setOf("Active Standby", "Suspend", "Power Off")
+private val WAKE_CHECK_GAPS_MS = listOf(0L, 3_000L, 7_000L) // checks at 0 s, 3 s, 10 s after wake
+
+class WakeCheckFailed(msg: String) : Exception(msg)
 
 /** Glue between the TV session and the pure Watcher. All decisions live in the Watcher. */
 class Runner(
@@ -75,13 +78,45 @@ class Runner(
                 val s = p.optString("state").ifEmpty { null } ?: return@collect
                 val was = power
                 power = s
-                if (s == "Active" && was != "Active") apply(locked { watcher.onPowerActive(clock()) })
+                if (s == "Active" && was != "Active") {
+                    apply(locked { watcher.onPowerActive(clock()) })
+                    scope?.launch { wakeCheck() }
+                }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             power = null
             status("TV power state unavailable; watching anyway")
+        }
+    }
+
+    /**
+     * After the TV wakes: check the link still answers (else end the session so the service reconnects),
+     * then redirect if webOS booted into LG Home — that event may have arrived while power still read standby.
+     * Re-checks cover a slow boot where the foreground app isn't known yet.
+     */
+    private suspend fun wakeCheck() {
+        for (waitMs in WAKE_CHECK_GAPS_MS) {
+            delay(waitMs)
+            val app = try {
+                extractAppId(session.request(FG_URI, JSONObject(), 5_000))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw WakeCheckFailed("TV did not answer after waking: ${e.message ?: e.javaClass.simpleName}")
+            }
+            if (app == watcher.vhomeId) return
+            if (app in watcher.homeIds) {
+                // One locked step, so a live Home event can't launch in between. onConnected forgets the
+                // last app, so the Home already on screen counts as a fresh transition.
+                apply(locked {
+                    if (watcher.snapshot().pending) emptyList()
+                    else watcher.onConnected(clock()) + watcher.onForeground(app, clock())
+                })
+                return
+            }
+            if (app.isNotEmpty()) return // some other app is up: nothing to fix
         }
     }
 

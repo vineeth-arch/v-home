@@ -20,7 +20,7 @@ private class Pending(val token: Int, val sentAt: Double) {
     var seenAt: Double? = null
 }
 
-class Watcher(val vhomeId: String, homeIds: List<String>, val doubleHomeEscape: Boolean = false) {
+class Watcher(val vhomeId: String, homeIds: List<String>, var doubleHomeEscape: Boolean = false) {
     val homeIds: List<String> = homeIds.filter { it.isNotBlank() }
     var paused: Boolean = false
     private var lastApp: String? = null

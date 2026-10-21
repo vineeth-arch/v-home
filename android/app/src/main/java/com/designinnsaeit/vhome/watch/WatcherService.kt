@@ -25,6 +25,7 @@ class WatcherService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loop: Job? = null
     @Volatile private var runner: Runner? = null
+    @Volatile private var watcher: Watcher? = null
     @Volatile private var line = "Starting"
     private var activeNetwork: Network? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
@@ -37,11 +38,18 @@ class WatcherService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action
+        if (loop == null && action in SETTINGS_ACTIONS) {
+            // From the settings screen while not watching: the activity already saved Prefs. Don't start watching.
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         val paused = Prefs.load(this).paused
         startAsForeground(paused)
-        when (intent?.action) {
+        when (action) {
             Notify.ACTION_PAUSE -> setPaused(true)
             Notify.ACTION_RESUME -> setPaused(false)
+            Notify.ACTION_RELOAD -> watcher?.doubleHomeEscape = Prefs.load(this).doubleHomeEscape
         }
         if (loop == null) {
             registerWifiCallback()
@@ -117,7 +125,8 @@ class WatcherService : Service() {
     private suspend fun mainLoop() {
         val watcherCfg = Prefs.load(this)
         val watcher = try {
-            Watcher(watcherCfg.vhomeId, watcherCfg.homeIds, watcherCfg.doubleHomeEscape).also { it.paused = watcherCfg.paused }
+            Watcher(watcherCfg.vhomeId, watcherCfg.homeIds, watcherCfg.doubleHomeEscape)
+                .also { it.paused = watcherCfg.paused; this.watcher = it }
         } catch (e: ConfigError) {
             setLine("Settings problem: ${e.message}")
             stopSelf()
@@ -180,5 +189,6 @@ class WatcherService : Service() {
 
     private companion object {
         const val ID = 1
+        val SETTINGS_ACTIONS = setOf(Notify.ACTION_PAUSE, Notify.ACTION_RESUME, Notify.ACTION_RELOAD)
     }
 }

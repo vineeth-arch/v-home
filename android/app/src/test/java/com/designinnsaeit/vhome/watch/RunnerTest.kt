@@ -31,7 +31,16 @@ private class FakeSession(val scope: TestScope) : TvSession {
 
     override val certSha256: String? = null
     override suspend fun open(onPrompt: () -> Unit) = "key"
+    val fgAnswers = ArrayDeque<String>() // scripted answers to the wake check's foreground query
+    var fgQueryFails = false
+    var fgQueries = 0
+
     override suspend fun request(uri: String, payload: JSONObject, timeoutMs: Long): JSONObject {
+        if (uri == FG_URI) {
+            fgQueries++
+            if (fgQueryFails) throw RuntimeException("no answer")
+            return fgOf(fgAnswers.removeFirstOrNull() ?: VH)
+        }
         check(uri == LAUNCH_URI)
         launchTimes += scope.currentTime
         val ok = !alwaysFail && (launchScript.removeFirstOrNull() ?: true)
@@ -148,6 +157,47 @@ class RunnerTest {
     @Test fun backoffCapsAt300() {
         assertTrue(backoff(30) { 1.0 } <= 300.0)
         assertTrue(backoff(30) { 0.0 } <= 300.0)
+    }
+
+    @Test fun wakeRedirectsWhenBootedIntoHome() = runTest {
+        val r = Rig(this); r.start()
+        r.power("Active Standby")
+        r.fg(HOME) // arrives while still reading standby: ignored
+        assertTrue(r.session.launchTimes.isEmpty())
+        r.session.fgAnswers += HOME
+        r.power("Active")
+        assertEquals(1, r.session.launchTimes.size)
+    }
+
+    @Test fun wakeRechecksWhileBooting() = runTest {
+        val r = Rig(this); r.start()
+        r.power("Suspend")
+        r.session.fgAnswers += listOf("", "", HOME) // foreground unknown until the third check
+        r.power("Active")
+        assertTrue(r.session.launchTimes.isEmpty())
+        advanceTimeBy(10_001)
+        assertEquals(3, r.session.fgQueries)
+        assertEquals(1, r.session.launchTimes.size)
+    }
+
+    @Test fun wakeNoRedirectWhenVhomeAlreadyUp() = runTest {
+        val r = Rig(this); r.start()
+        r.power("Active Standby")
+        r.session.fgAnswers += VH
+        r.power("Active")
+        advanceTimeBy(11_000)
+        assertEquals(1, r.session.fgQueries)
+        assertTrue(r.session.launchTimes.isEmpty())
+    }
+
+    @Test fun wakeCheckFailureEndsSession() = runTest {
+        val s = FakeSession(this).apply { fgQueryFails = true }
+        val runner = Runner(Watcher(VH, listOf(HOME)), s, {}, { currentTime / 1000.0 })
+        var failure: Throwable? = null
+        backgroundScope.launch { failure = runCatching { runner.session() }.exceptionOrNull() }
+        runCurrent()
+        s.power.tryEmit(powerOf("Active")); runCurrent()
+        assertTrue(failure is WakeCheckFailed)
     }
 
     @Test fun backoffStartsAt5() {

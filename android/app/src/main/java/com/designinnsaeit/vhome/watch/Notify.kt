@@ -11,6 +11,7 @@ object Notify {
     const val CHANNEL = "watch"
     const val ACTION_PAUSE = "com.designinnsaeit.vhome.watch.PAUSE"
     const val ACTION_RESUME = "com.designinnsaeit.vhome.watch.RESUME"
+    const val ACTION_RELOAD = "com.designinnsaeit.vhome.watch.RELOAD"
     const val STATUS_PREFS = "vhome_watch_status"
     private const val TAP_ID = 2
 

@@ -9,6 +9,8 @@
     <string name="hint_home_ids">LG Home app IDs, comma separated</string>
     <string name="save">Save</string>
     <string name="saved">Saved</string>
+    <string name="double_home">Press Home twice to stay on LG Home</string>
+    <string name="double_home_help">When on, a second Home press within 3 seconds keeps LG Home instead of opening V/HOME.</string>
     <string name="pair">Pair with TV</string>
     <string name="need_ip">Enter the TV IP address first.</string>
     <string name="pair_prompt">Accept the prompt on your TV…</string>

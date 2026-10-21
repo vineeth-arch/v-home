@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Switch
 import android.widget.TextView
 import javax.net.SocketFactory
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var pauseToggle: Button
     private lateinit var hostField: EditText
     private lateinit var vhomeField: EditText
+    private lateinit var doubleHomeSwitch: Switch
     private lateinit var homeIdsField: EditText
     private lateinit var pairStatus: TextView
     private lateinit var batteryText: TextView
@@ -54,6 +56,9 @@ class MainActivity : Activity() {
         hostField.setText(c.host ?: "")
         vhomeField.setText(c.vhomeId)
         homeIdsField.setText(c.homeIds.joinToString(", "))
+        doubleHomeSwitch = findViewById(R.id.doubleHomeSwitch)
+        doubleHomeSwitch.isChecked = c.doubleHomeEscape
+        doubleHomeSwitch.setOnCheckedChangeListener { _, _ -> save() }
 
         findViewById<Button>(R.id.saveButton).setOnClickListener { save(); pairStatus.setText(R.string.saved) }
         findViewById<Button>(R.id.pairButton).setOnClickListener { pair() }
@@ -98,10 +103,15 @@ class MainActivity : Activity() {
             host = hostField.text.toString().trim().ifEmpty { null },
             vhomeId = vhomeField.text.toString().trim().ifEmpty { DEFAULT_VHOME_ID },
             homeIds = ids.ifEmpty { DEFAULT_HOME_IDS },
+            doubleHomeEscape = doubleHomeSwitch.isChecked,
         )
     }
 
-    private fun save() = Prefs.save(this, currentConfig())
+    private fun save() {
+        Prefs.save(this, currentConfig())
+        // Tell a running service to pick up live settings; harmless if it isn't running.
+        runCatching { startService(Intent(this, WatcherService::class.java).setAction(Notify.ACTION_RELOAD)) }
+    }
 
     private fun pair() {
         val host = hostField.text.toString().trim()
