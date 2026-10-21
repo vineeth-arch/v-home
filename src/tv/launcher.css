@@ -110,3 +110,4 @@ html[data-l-wall='graphite'] #stage { background-color: #121316; background-imag
   .launcher .l-tile, .launcher .l-tile::before, .launcher .l-tile::after, .l-edit .l-btn, .l-edit .l-btn::after { transition: none; }
   .launcher .l-tile[data-focused], .l-edit .l-btn[data-focused] { transform: none; }
 }
+.l-tbtns .l-tbtn:last-child:nth-child(odd) { grid-column: span 2; }

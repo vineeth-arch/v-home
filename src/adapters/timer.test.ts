@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { HandoffTimer, LunaTimer, MockTimer, TimerController, parseStatus, validMinutes } from './timer'
+import { FallbackTimer, HandoffTimer, LunaTimer, MockTimer, TimerController, parseReport, parseStatus, validMinutes } from './timer'
 import type { LunaResult, Platform } from './platform'
 
 const fake = (reply: LunaResult): Platform => ({ simulated: true, call: async () => reply, launchApp: async () => reply, subscribe: () => () => {} })
@@ -40,4 +40,39 @@ test('mock countdown derives from deadline', async () => {
   expect(await m.status()).toMatchObject({ state: { scheduled: true, shutdownAt: 60000 } })
   now = 61000
   expect(await m.status()).toMatchObject({ state: { scheduled: false } })
+})
+
+test('direct call denied by the TV -> falls back to opening V/TV Sleep, never confirms', async () => {
+  const launches: unknown[] = []
+  const p: Platform = { simulated: true, call: async () => ({ ok: false, error: 'denied method schedule for category "/"' }), launchApp: async (id, params) => { launches.push([id, params]); return { ok: true, data: {} } }, subscribe: () => () => {} }
+  const t = new FallbackTimer(p)
+  expect(await t.schedule(30)).toEqual({ kind: 'handoff' })
+  expect(launches).toEqual([['com.designinnsaeit.vtvsleep', { mode: 'schedule', minutes: 30, returnTo: 'com.designinnsaeit.vhome' }]])
+  expect(t.label).toBe('Opens V/TV Sleep')
+  expect(await t.status()).toEqual({ kind: 'unavailable' })
+  expect(await t.cancel()).toEqual({ kind: 'handoff' })
+})
+test('direct call that works stays direct; other failures are not turned into a handoff', async () => {
+  const ok = new FallbackTimer(fake({ ok: true, data: { scheduled: true, shutdownAt: 5, minutes: 30 } }))
+  expect(await ok.schedule(30)).toMatchObject({ kind: 'confirmed' })
+  const bad = new FallbackTimer(fake({ ok: false, error: 'service crashed' }))
+  expect(await bad.schedule(30)).toEqual({ kind: 'failed', error: 'service crashed' })
+  expect(await new FallbackTimer(fake({ unknown: true })).schedule(30)).toEqual({ kind: 'unknown' })
+})
+
+test('after a denied direct call, status comes only from what V/TV Sleep reported back', async () => {
+  localStorage.clear()
+  let now = 1000
+  const denied: Platform = { simulated: true, call: async () => ({ ok: false, error: 'denied method status for category "/"' }), launchApp: async () => ({ ok: true, data: {} }), subscribe: () => () => {} }
+  const t = new FallbackTimer(denied, () => now)
+  expect(await t.status()).toEqual({ kind: 'unavailable' }) // nothing reported yet: no invented countdown
+  expect(t.ingest(parseReport({ op: 'schedule', minutes: 15, shutdownAt: 901000, at: 500 }))).not.toBeNull()
+  expect(await t.status()).toEqual({ kind: 'confirmed', state: { scheduled: true, shutdownAt: 901000, minutes: 15 } })
+  now = 902000
+  expect(await t.status()).toEqual({ kind: 'unavailable' }) // past its time: unknown, not "no timer"
+  expect(t.ingest(parseReport({ op: 'cancel', at: 100 }))).toBeNull() // older than what we have: ignored
+  expect(t.ingest(parseReport({ op: 'cancel', at: 600 }))).not.toBeNull()
+  expect(await t.status()).toEqual({ kind: 'confirmed', state: { scheduled: false } })
+  expect(parseReport({ op: 'schedule', at: 1 })).toBeNull()
+  expect(parseReport('x')).toBeNull()
 })

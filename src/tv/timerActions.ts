@@ -12,7 +12,7 @@ export function useTimerActions() {
     const r = await ctrl.mutate(fn)
     switch (r.kind) {
       case 'confirmed': setMsg({ text: r.state.scheduled ? `TV will turn off at ${fmtTime(r.state.shutdownAt, tz)}` : 'No timer set' }); break
-      case 'handoff': setMsg({ text: 'Opened V/TV Sleep. Press Back to return. Result not confirmed here.', warn: true }); break
+      case 'handoff': setMsg({ text: 'Sent to V/TV Sleep. It confirms here when it returns.', warn: true }); break
       case 'failed': setMsg({ text: `Could not do that: ${r.error}`, warn: true }); break
       case 'unknown': setMsg({ text: 'No confirmation received. Checking the timer…', warn: true }); break
       case 'blocked': setMsg({ text: 'Still checking the timer. Try again in a moment.', warn: true }); break

@@ -33,7 +33,7 @@ describe('Launcher', () => {
   it('shows the sleep-timer shortcuts on the right', () => {
     mount(<Launcher />)
     const labels = [...host.querySelectorAll('.l-timer button')].map((b) => b.textContent)
-    expect(labels).toEqual(['30min', '45min', '60min', '90min', 'Cancel timer'])
+    expect(labels).toEqual(['15min', '30min', '45min', '60min', '90min', 'Cancel timer'])
   })
   it('renders with the curated catalog and an empty household (no personal card)', () => {
     mount(<Launcher />)

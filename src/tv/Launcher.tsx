@@ -78,7 +78,7 @@ function PersonalCard() {
   </div>
 }
 
-const PRESETS = [30, 45, 60, 90]
+const PRESETS = [15, 30, 45, 60, 90]
 /** Sleep-timer shortcuts, always on screen at the right. Uses the same adapter and honest messages as Quick controls. */
 function TimerPanel() {
   const { timerState, now, tz } = useApp()

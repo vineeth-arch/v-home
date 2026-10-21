@@ -43,7 +43,7 @@ export function QuickControls({ onClose }: { onClose: () => void }) {
         {!verified && ' · not yet verified on this TV'}
       </div>
       <div className="presets">
-        {[30, 45, 60, 90].map((m, i) => <Btn key={m} id={`q-${m}`} scope="quick" initial={i === 0} onClick={() => run((a) => a.schedule(m))}>{m} min</Btn>)}
+        {[15, 30, 45, 60, 90].map((m, i) => <Btn key={m} id={`q-${m}`} scope="quick" initial={i === 0} onClick={() => run((a) => a.schedule(m))}>{m} min</Btn>)}
       </div>
       <div className="stepper">
         <Btn id="q-minus" scope="quick" className="chip" onClick={() => setCustom((c) => Math.max(1, c - 5))}>−5</Btn>

@@ -8,7 +8,7 @@ import { supabaseConfigured } from '../shared/supabase'
 import { launchFailure } from '../shared/launch'
 import { EXIT_EVENT } from './FocusProvider'
 import { useLive, type Live } from './live'
-import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
+import { FallbackTimer, MockTimer, parseReport, TimerController, type TimerState } from '../adapters/timer'
 import { resolvePrefs } from '../shared/prefs'
 import { studioVisible } from '../../supabase/functions/_shared/studio'
 import { bundledCatalog, isSystemApp, withRemembered, type CatalogEntry, type Capability } from '../shared/catalog'
@@ -57,7 +57,8 @@ function useWeather(lat: number | undefined, lon: number | undefined, tz: string
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const platform = useMemo(createPlatform, [])
-  const ctrl = useMemo(() => new TimerController(platform.simulated ? new MockTimer() : new LunaTimer(platform)), [platform])
+  const timerAdapter = useMemo(() => (platform.simulated ? new MockTimer() : new FallbackTimer(platform)), [platform])
+  const ctrl = useMemo(() => new TimerController(timerAdapter), [timerAdapter])
   // ?empty=1 previews a brand-new household (simulation only)
   const isLive = supabaseConfigured && !new URLSearchParams(location.search).has('sim')
   const live = useLive(isLive)
@@ -129,6 +130,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const r = await ctrl.refresh()
     setTimerState(r.kind === 'confirmed' ? r.state : 'unavailable')
   }, [ctrl])
+  useEffect(() => { // V/TV Sleep reopens V/HOME with its confirmed result after a one-click timer request
+    if (!(timerAdapter instanceof FallbackTimer)) return
+    const take = (raw: unknown) => {
+      let p: unknown = raw
+      if (typeof raw === 'string') { try { p = JSON.parse(raw) } catch { return } }
+      const rep = timerAdapter.ingest(parseReport((p as { timer?: unknown } | null)?.timer))
+      if (!rep) return
+      if (rep.op === 'error') { setToast(`V/TV Sleep: ${rep.error}`); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 6000) }
+      void refreshTimer()
+    }
+    const ev = (e: Event) => take((e as CustomEvent).detail)
+    document.addEventListener('webOSRelaunch', ev); document.addEventListener('webOSLaunch', ev)
+    take(window.PalmSystem && (window.PalmSystem as { launchParams?: unknown }).launchParams)
+    return () => { document.removeEventListener('webOSRelaunch', ev); document.removeEventListener('webOSLaunch', ev) }
+  }, [timerAdapter, refreshTimer])
   useEffect(() => { // launch, resume, every 30s while visible
     refreshTimer()
     const tick = setInterval(() => { if (!document.hidden) refreshTimer() }, 30_000)

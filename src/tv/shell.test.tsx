@@ -31,7 +31,7 @@ test('starts on the launcher; Back from Our Home returns to it', async () => {
   expect(host.querySelector('[data-testid=launcher]')).not.toBeNull()
   click('Our Home')
   expect(host.querySelector('[data-testid=launcher]')).toBeNull()
-  expect(host.textContent).toContain('Start our') // Our Home content (hero actions)
+  expect(host.textContent).toMatch(/Start our|Wind down|Watch Together|Skip/) // Our Home hero actions; which one depends on the time of day
   back()
   expect(host.querySelector('[data-testid=launcher]')).not.toBeNull()
 })
