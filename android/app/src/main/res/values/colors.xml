@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ink">#151515</color>
+    <color name="paper">#FAFAF7</color>
+    <color name="paper_2">#EFEFEA</color>
+    <color name="grey">#808080</color>
+    <color name="red">#D62828</color>
+    <color name="red_pressed">#C52525</color>
+    <color name="blue">#1D3FBF</color>
+    <color name="yellow">#EBC21F</color>
+    <color name="on_colour">#151515</color>
+    <color name="on_blue">#FAFAF7</color>
+    <color name="ripple">#1F151515</color>
+    <color name="icon_bg">#000000</color>
+</resources>
