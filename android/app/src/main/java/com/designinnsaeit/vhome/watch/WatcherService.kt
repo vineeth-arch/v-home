@@ -27,7 +27,10 @@ import java.util.Date
 import java.util.Locale
 
 /** Short notification line per state; "Paused until 10:41 PM" when the pause is timed. */
-fun notificationText(s: WatchState, pausedUntil: Long? = null): String = when (s) {
+fun notificationText(
+    s: WatchState, pausedUntil: Long? = null,
+    time: (Long) -> String = { SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(it)) },
+): String = when (s) {
     WatchState.NOT_PAIRED -> "Not paired yet"
     WatchState.WAITING_WIFI -> "Waiting for home Wi-Fi"
     WatchState.AWAY -> "Not on home Wi-Fi"
@@ -36,7 +39,7 @@ fun notificationText(s: WatchState, pausedUntil: Long? = null): String = when (s
     WatchState.CONNECTING -> "Connecting to your TV"
     WatchState.WATCHING -> "Watching your TV"
     WatchState.PAUSED ->
-        if (pausedUntil == null) "Paused" else "Paused until " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(pausedUntil))
+        if (pausedUntil == null) "Paused" else "Paused until " + time(pausedUntil)
     WatchState.PROBLEM -> "Needs attention"
 }
 
@@ -205,7 +208,8 @@ class WatcherService : Service() {
         return Notification.Builder(this, Notify.CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_watch)
             .setContentTitle("V/HOME Watcher")
-            .setContentText(notificationText(s, WatchStatus.pausedUntil(this)))
+            // the phone's own 12/24 h setting, same as the app screen
+            .setContentText(notificationText(s, WatchStatus.pausedUntil(this)) { android.text.format.DateFormat.getTimeFormat(this).format(Date(it)) })
             .setStyle(Notification.BigTextStyle().bigText(big))
             .setContentIntent(open)
             .setCategory(Notification.CATEGORY_SERVICE)

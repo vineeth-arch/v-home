@@ -22,6 +22,34 @@ It is pinned to your TV: pairing records the TV's certificate fingerprint, and t
 2. Copy it to the phone and open it. Android will ask to allow installs from that source (your file manager or browser); allow it for this install.
 3. Open the app, enter the TV's IP address, and tap Pair. Accept the prompt that appears on the TV. The app stores the TV's client key and certificate fingerprint.
 
+## Always on (since 2026-10-22)
+
+Once paired, the watcher runs all the time as a foreground service with a silent "V/HOME Watcher" notification. You never need to open the app.
+
+**What the notification shows.** It reads Watching your TV, Waiting for home Wi-Fi, Not on home Wi-Fi, TV is off, or Paused until a set time. It has a **Pause 1 h** button (or **Resume**), and tapping it opens the app.
+
+**Off home Wi-Fi it idles.** There are no sockets or timers. It resumes when the phone rejoins Wi-Fi; on the owner's phone that took 6 s.
+
+**Recognising home Wi-Fi.** It recognises home by the router's address and subnet, which needs no location permission. On another network it tries once, then idles as "Not on home Wi-Fi". Before home has been seen once, any Wi-Fi counts as home.
+
+**If Android kills it.** It is restarted within a few seconds (sticky restart; about 2 s on the owner's phone). A 15-minute watchdog job and the boot or app-update receiver start it again if needed.
+
+**Timed pause.** The app offers 30 min, 1 h, 2 h, or until you resume. It ends by itself at the set time, even after a restart.
+
+**Samsung.** One UI leaves apps set to battery *Unrestricted* out of the sleeping lists, so the app may not appear in "Never sleeping apps". That's expected. Instead:
+- set the app's battery to Unrestricted;
+- turn **Put unused apps to sleep** off (Battery, Background usage limits);
+- choose **Keep open** on the app in Recents.
+
+The app's Setup list checks what it can detect (battery unrestricted, background restriction, activity level) and links to the rest.
+
+Tested on the phone, 2026-10-22:
+- Wi-Fi off kept the service and notification ("Waiting for home Wi-Fi").
+- Wi-Fi on went back to Watching in 6 s.
+- `kill -9` was restarted in about 2 s.
+- Pause 1 h blocked the Home redirect, and Resume restored it.
+- The layout holds at font scale 1.3.
+
 ## Phone settings that matter
 
 Set battery use for the app to Unrestricted (the app shows its current state and has a button to the right setting). On many phones the default "optimised" mode will eventually stop a background app. Allow notifications, because the foreground service needs its notification to be visible; on Android 13 and newer that is a runtime permission. Without these two the watcher can be stopped silently, and the app's own status line is then the only clue.
