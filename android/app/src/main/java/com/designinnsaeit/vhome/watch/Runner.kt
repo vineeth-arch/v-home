@@ -39,6 +39,8 @@ class Runner(
         scope = this
         try {
             apply(locked { watcher.onConnected(clock()) })
+            // A booting TV is slow to show V/HOME; that must not count toward the failure breaker.
+            if (bootSession) apply(locked { watcher.onPowerActive(clock()) })
             status(if (watcher.paused) "Paused" else "Watching")
             val kids = listOf(launch { watchPower() }, launch { tick() })
             try {
