@@ -15,3 +15,4 @@ tv-catalog/
 tv-catalog.*
 companion/.venv/
 __pycache__/
+*.tsbuildinfo
