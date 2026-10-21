@@ -113,7 +113,9 @@ class MainActivity : Activity() {
         scope.launch {
             try {
                 val (key, pin) = withContext(Dispatchers.IO) {
-                    val client = SsapClient(host, null, null, true, SocketFactory.getDefault())
+                    val sockets = HomeNetwork.wifiNetwork(this@MainActivity)?.socketFactory ?: SocketFactory.getDefault()
+                    val client = SsapClient(host, null, null, true, sockets,
+                        manifest = Prefs.ssapManifest(this@MainActivity))
                     try {
                         val key = client.open()
                         key to client.certSha256!!

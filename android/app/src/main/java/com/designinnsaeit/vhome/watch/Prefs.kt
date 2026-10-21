@@ -1,6 +1,7 @@
 package com.designinnsaeit.vhome.watch
 
 import android.content.Context
+import org.json.JSONObject
 
 object Prefs {
     private const val NAME = "vhome_watch"
@@ -18,6 +19,10 @@ object Prefs {
             paused = p.getBoolean("paused", false),
         )
     }
+
+    /** The unsigned SSAP register manifest from assets (permissions the TV is asked for). */
+    fun ssapManifest(ctx: Context): JSONObject =
+        JSONObject(ctx.assets.open("manifest.json").bufferedReader().use { it.readText() })
 
     fun save(ctx: Context, c: Config) {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
