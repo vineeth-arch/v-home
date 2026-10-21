@@ -23,7 +23,7 @@ const mount = async () => {
   host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host)
   await act(async () => { root.render(<FocusProvider><AppProvider><App /></AppProvider></FocusProvider>) })
 }
-beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; localStorage.clear(); history.replaceState(null, '', '/') })
+beforeEach(() => { h.configured = false; (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; localStorage.clear(); history.replaceState(null, '', '/') })
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks() })
 
 test('starts on the launcher; Back from Our Home returns to it', async () => {
@@ -62,5 +62,4 @@ test('unpaired live: launcher and Settings render, Our Home shows the pairing ca
   expect(host.textContent).toContain('Timezone')
   click('Home')
   expect(host.querySelector('[data-testid=launcher]')).not.toBeNull()
-  h.configured = false
 })
