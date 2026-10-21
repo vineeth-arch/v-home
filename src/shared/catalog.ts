@@ -1,4 +1,7 @@
 // Launcher catalog (contract: docs/contracts/catalog-v1.md). WS-B implements the bodies; signatures are fixed.
+import { isValidAppId } from './apps'
+import { CANDIDATE_APPS } from './model'
+
 export type Capability = 'supported' | 'denied' | 'unavailable' | 'unverified'
 export type LaunchOutcome = 'accepted' | 'failed' | 'unknown' // accepted != destination rendered
 export type EntrySource = 'companion' | 'tv' | 'curated'
@@ -14,16 +17,87 @@ export interface CatalogEntry {
 }
 export interface Catalog { schema: 1; generatedAt: string; tv: { model: string; firmware: string }; entries: CatalogEntry[] }
 
-/** Validates a raw catalog.json value. Drops bad entries; null when the file itself is invalid. */
-export function parseCatalog(_raw: unknown): Catalog | null { return null }
+const ICON_RE = /^[a-zA-Z0-9._-]{1,100}\.(png|jpe?g)$/i
+const SOURCES: EntrySource[] = ['companion', 'tv', 'curated']
+export const MAX_ENTRIES = 200
 
+function parseEntry(raw: unknown): CatalogEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (!isValidAppId(r.id)) return null
+  const title = typeof r.title === 'string' ? r.title.trim() : ''
+  if (title.length < 1 || title.length > 60) return null
+  if (r.kind !== 'app' && r.kind !== 'input') return null
+  if (r.icon !== null && r.icon !== undefined && !(typeof r.icon === 'string' && ICON_RE.test(r.icon))) return null
+  if (!SOURCES.includes(r.source as EntrySource)) return null
+  return { id: r.id, title, kind: r.kind, icon: typeof r.icon === 'string' ? r.icon : null, source: r.source as EntrySource, system: r.system === true }
+}
+
+/** Validates a raw catalog.json value. Drops bad entries; null when the file itself is invalid. */
+export function parseCatalog(raw: unknown): Catalog | null {
+  try {
+    if (!raw || typeof raw !== 'object') return null
+    const r = raw as Record<string, unknown>
+    if (r.schema !== 1 || !Array.isArray(r.entries)) return null
+    const seen = new Set<string>(); const entries: CatalogEntry[] = []
+    for (const item of r.entries) {
+      const e = parseEntry(item)
+      if (!e || seen.has(e.id)) continue
+      seen.add(e.id); entries.push(e)
+      if (entries.length >= MAX_ENTRIES) break
+    }
+    const tv = (r.tv && typeof r.tv === 'object' ? r.tv : {}) as Record<string, unknown>
+    return {
+      schema: 1,
+      generatedAt: typeof r.generatedAt === 'string' ? r.generatedAt : '',
+      tv: { model: typeof tv.model === 'string' ? tv.model : '', firmware: typeof tv.firmware === 'string' ? tv.firmware : '' },
+      entries,
+    }
+  } catch { return null }
+}
+
+// Bundled at build time; the folder is gitignored and usually absent (globs are then empty).
+const catalogFiles = import.meta.glob('/tv-catalog/catalog.json', { eager: true, import: 'default' }) as Record<string, unknown>
+const iconFiles = import.meta.glob('/tv-catalog/icons/*', { eager: true, query: '?url', import: 'default' }) as Record<string, unknown>
+
+let cached: Catalog | null = null
 /** Catalog bundled into this build (tv-catalog/), else curated candidates. Never throws. */
 export function bundledCatalog(): Catalog {
-  return { schema: 1, generatedAt: '', tv: { model: '', firmware: '' }, entries: [] }
+  if (cached) return cached
+  let c: Catalog | null = null
+  try { c = parseCatalog(Object.values(catalogFiles)[0]) } catch { c = null }
+  if (!c) {
+    c = {
+      schema: 1, generatedAt: '', tv: { model: '', firmware: '' },
+      entries: CANDIDATE_APPS.map((a) => ({ id: a.id, title: a.label, kind: a.id.includes('.hdmi') ? 'input' as const : 'app' as const, icon: null, source: 'curated' as const, system: false })),
+    }
+  }
+  cached = c
+  return c
 }
 
 /** Refresh: keeps prev order, marks vanished entries unavailable, appends new ones, no duplicate ids. */
-export function mergeEntries(prev: CatalogEntry[], next: CatalogEntry[]): CatalogEntry[] { return [...prev, ...next.filter((n) => !prev.some((p) => p.id === n.id))] }
+export function mergeEntries(prev: CatalogEntry[], next: CatalogEntry[]): CatalogEntry[] {
+  const nextById = new Map<string, CatalogEntry>()
+  for (const n of next) if (!nextById.has(n.id)) nextById.set(n.id, n)
+  const out: CatalogEntry[] = []; const seen = new Set<string>()
+  for (const p of prev) {
+    if (seen.has(p.id)) continue
+    seen.add(p.id)
+    const n = nextById.get(p.id)
+    if (n) { const { unavailable: _u, ...rest } = n; out.push({ ...rest }) } else out.push({ ...p, unavailable: true })
+  }
+  for (const n of nextById.values()) {
+    if (seen.has(n.id)) continue
+    seen.add(n.id); const { unavailable: _u, ...rest } = n; out.push({ ...rest })
+  }
+  return out
+}
 
 /** URL usable in <img src> for the entry's bundled icon, or null (show lettered fallback). */
-export function iconUrl(_e: CatalogEntry): string | null { return null }
+export function iconUrl(e: CatalogEntry): string | null {
+  if (!e.icon) return null
+  const key = Object.keys(iconFiles).find((k) => k.endsWith('/' + e.icon))
+  const v = key ? iconFiles[key] : null
+  return typeof v === 'string' && v ? v : null
+}
