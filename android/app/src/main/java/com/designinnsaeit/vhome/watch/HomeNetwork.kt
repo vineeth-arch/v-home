@@ -1,12 +1,32 @@
 package com.designinnsaeit.vhome.watch
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.util.Log
 
-// STUB (Wave 0). Task B4 replaces this file.
 object HomeNetwork {
-    fun register(ctx: Context): Unit = TODO()
-    fun wifiRequest(): NetworkRequest = TODO()
+    /** Idempotent: same request code and intent, so the system replaces the earlier registration. */
+    fun register(ctx: Context) {
+        try {
+            val cm = ctx.getSystemService(ConnectivityManager::class.java)
+            val pi = PendingIntent.getBroadcast(
+                ctx, 0, Intent(ctx, NetworkReceiver::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+            cm.registerNetworkCallback(wifiRequest(), pi)
+        } catch (e: RuntimeException) {
+            Log.w("HomeNetwork", "register failed", e)
+        }
+    }
+
+    fun wifiRequest(): NetworkRequest = NetworkRequest.Builder()
+        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+        .build()
 }
 
-fun applyPairing(c: Config, host: String, key: String, pin: String): Config = TODO()
+fun applyPairing(c: Config, host: String, key: String, pin: String): Config =
+    c.copy(host = host, clientKey = key, pin = pin)

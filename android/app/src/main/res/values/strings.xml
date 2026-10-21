@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="channel_name">Watching TV</string>
+    <string name="tap_to_start">Tap to start watching</string>
+
+    <string name="section_tv">TV</string>
+    <string name="hint_tv_ip">TV IP address</string>
+    <string name="hint_vhome_id">V/HOME app ID</string>
+    <string name="hint_home_ids">LG Home app IDs, comma separated</string>
+    <string name="save">Save</string>
+    <string name="saved">Saved</string>
+    <string name="pair">Pair with TV</string>
+    <string name="need_ip">Enter the TV IP address first.</string>
+    <string name="pair_prompt">Accept the prompt on your TV…</string>
+    <string name="paired_with">Paired with %1$s</string>
+    <string name="pair_failed">Could not pair: %1$s</string>
+    <string name="pair_failed_unknown">Could not reach the TV.</string>
+
+    <string name="section_phone">Phone</string>
+    <string name="battery_ok">Battery: unrestricted</string>
+    <string name="battery_restricted">Battery: may be limited in the background</string>
+    <string name="battery_fix">Allow background use</string>
+    <string name="notif_ok">Notifications: allowed</string>
+    <string name="notif_off">Notifications: off</string>
+    <string name="notif_fix">Allow notifications</string>
+
+    <string name="section_status">Status</string>
+    <string name="status_default">Not watching yet</string>
+    <string name="pause">Pause watching</string>
+    <string name="resume">Resume watching</string>
+    <string name="footer">Watching starts automatically when this phone joins home Wi-Fi.</string>
+</resources>
