@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useApp } from './state'
 import { useFocusable, useFocusCtx, useLayer } from './FocusProvider'
 import { iconUrl, type CatalogEntry } from '../shared/catalog'
-import { MAX_FAVORITES, deleteFolder, moveToFolder, toggleFavorite, toggleHidden, type Folder, type LauncherPrefs } from '../shared/launcherPrefs'
+import { MAX_FAVORITES, deleteFolder, moveId, moveToFolder, renameFolder as renameFolderTo, toggleFavorite, toggleHidden, type Folder, type LauncherPrefs } from '../shared/launcherPrefs'
+import { OnScreenKeyboard } from './Keyboard'
 import { fnv1a } from '../shared/daily'
 
 export const FOLDER_NAMES = ['Streaming', 'Music', 'Kids', 'Games', 'Sports', 'Other']
@@ -25,19 +26,13 @@ export function moveStep(p: LauncherPrefs, entries: CatalogEntry[], id: string, 
   const next = [...ids]; next[a] = nb; next[b] = id
   return { ...p, order: next }
 }
-export function createFolder(p: LauncherPrefs): LauncherPrefs {
+export function createFolder(p: LauncherPrefs, typed?: string): LauncherPrefs {
   const used = p.folders.map((f) => f.name)
-  const name = FOLDER_NAMES.find((n) => !used.includes(n)) ?? `Folder ${p.folders.length + 1}`
+  const name = typed?.trim().slice(0, 30) || (FOLDER_NAMES.find((n) => !used.includes(n)) ?? `Folder ${p.folders.length + 1}`)
   let n = p.folders.length + 1; while (p.folders.some((f) => f.id === `f${n}`)) n++
   return { ...p, folders: [...p.folders, { id: `f${n}`, name, apps: [] }] }
 }
-export function renameFolder(p: LauncherPrefs, folderId: string): LauncherPrefs {
-  const f = p.folders.find((x) => x.id === folderId); if (!f) return p
-  const at = FOLDER_NAMES.indexOf(f.name), others = p.folders.filter((x) => x.id !== folderId).map((x) => x.name)
-  const cycle = FOLDER_NAMES.map((_, i) => FOLDER_NAMES[(at + 1 + i) % FOLDER_NAMES.length])
-  const name = cycle.find((n) => !others.includes(n)) ?? cycle[0]
-  return { ...p, folders: p.folders.map((x) => (x.id === folderId ? { ...x, name } : x)) }
-}
+
 // ---- shared bits ----
 export function AppIcon({ entry, size = 64 }: { entry: CatalogEntry; size?: number }) {
   const url = iconUrl(entry)
@@ -55,13 +50,14 @@ export function LBtn({ id, scope, initial, className = '', onClick, children, di
 
 const SCOPE = 'launcher-edit'
 
-export function LauncherEdit({ onClose }: { onClose: () => void }) {
+export function LauncherEdit({ onClose, startWith = null }: { onClose: () => void; startWith?: string | null }) {
   const { catalog, launcherPrefs, setLauncherPrefs } = useApp()
   const { focus } = useFocusCtx()
   const [draft, setDraft] = useState<LauncherPrefs>(launcherPrefs) // snapshot; the saved prefs are untouched until Save
-  const [sel, setSel] = useState<string | null>(null)
+  const [sel, setSel] = useState<string | null>(startWith)
   const [msg, setMsg] = useState('')
-  useLayer(SCOPE, true, onClose)
+  const [kbd, setKbd] = useState<null | { title: string; initial: string; done: (t: string) => void }>(null)
+  useLayer(SCOPE, !kbd, onClose)
   const byId = useMemo(() => new Map(catalog.map((e) => [e.id, e])), [catalog])
   const ids = orderedIds(catalog, draft)
   const selEntry = sel ? byId.get(sel) : undefined
@@ -84,6 +80,10 @@ export function LauncherEdit({ onClose }: { onClose: () => void }) {
           <b className="l-edit-sel">{selEntry.title}</b>
           <LBtn id="le-act-earlier" scope={SCOPE} onClick={() => apply(moveStep(draft, catalog, selEntry.id, -1))}>Move earlier</LBtn>
           <LBtn id="le-act-later" scope={SCOPE} onClick={() => apply(moveStep(draft, catalog, selEntry.id, 1))}>Move later</LBtn>
+          {draft.favorites.includes(selEntry.id) && <>
+            <LBtn id="le-fav-earlier" scope={SCOPE} onClick={() => apply({ ...draft, favorites: moveId(draft.favorites, selEntry.id, -1) })}>Favorite earlier</LBtn>
+            <LBtn id="le-fav-later" scope={SCOPE} onClick={() => apply({ ...draft, favorites: moveId(draft.favorites, selEntry.id, 1) })}>Favorite later</LBtn>
+          </>}
           <LBtn id="le-act-fav" scope={SCOPE} onClick={() => apply(toggleFavorite(draft, selEntry.id), !draft.favorites.includes(selEntry.id) && draft.favorites.length >= MAX_FAVORITES ? `Favorites are full (${MAX_FAVORITES}).` : '')}>
             {draft.favorites.includes(selEntry.id) ? 'Remove favorite' : 'Add favorite'}</LBtn>
           <LBtn id="le-act-hide" scope={SCOPE} onClick={() => apply(toggleHidden(draft, selEntry.id))}>{draft.hidden.includes(selEntry.id) ? 'Unhide' : 'Hide'}</LBtn>
@@ -96,10 +96,10 @@ export function LauncherEdit({ onClose }: { onClose: () => void }) {
         <span className="l-dim">Folders</span>
         {draft.folders.map((f: Folder) => <span key={f.id} className="l-edit-folder">
           <b>{f.name} ({f.apps.length})</b>
-          <LBtn id={`le-fr-${f.id}`} scope={SCOPE} onClick={() => apply(renameFolder(draft, f.id))}>Rename</LBtn>
+          <LBtn id={`le-fr-${f.id}`} scope={SCOPE} onClick={() => setKbd({ title: 'Folder name', initial: f.name, done: (t) => apply(t ? renameFolderTo(draft, f.id, t) : draft) })}>Rename</LBtn>
           <LBtn id={`le-fd-${f.id}`} scope={SCOPE} onClick={() => { apply(deleteFolder(draft, f.id), `${f.name} deleted; its apps are back in the grid.`) }}>Delete</LBtn>
         </span>)}
-        <LBtn id="le-newfolder" scope={SCOPE} onClick={() => apply(createFolder(draft))}>New folder</LBtn>
+        <LBtn id="le-newfolder" scope={SCOPE} onClick={() => setKbd({ title: 'Name the new folder', initial: '', done: (t) => apply(createFolder(draft, t)) })}>New folder</LBtn>
       </div>
       <div className="l-edit-msg" role="status">{msg}</div>
       <div className="l-edit-list">
@@ -111,6 +111,7 @@ export function LauncherEdit({ onClose }: { onClose: () => void }) {
           </LBtn>
         })}
       </div>
+      {kbd && <OnScreenKeyboard title={kbd.title} initial={kbd.initial} onCancel={() => setKbd(null)} onDone={(t) => { const d = kbd.done; setKbd(null); d(t) }} />}
     </div></div>
   )
 }

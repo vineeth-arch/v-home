@@ -79,3 +79,10 @@ H4, timer: schedule, check status and cancel a timer from V/HOME while the compa
 H5, disruptions: Mac sleep and wake; Mac Wi-Fi loss and return; TV standby and power on; TV restart. After each, the watcher reconnects quietly, does not redirect unless the TV is actually on LG Home, and never turns the TV on.
 
 H6, stability: leave it running for several hours of normal use; the log shows no growth beyond rotation, no unexpected pauses, memory and CPU stay negligible, and `status` is still connected.
+
+## Noticing new apps and refreshing V/HOME
+
+Every 30 minutes (first check a minute after connecting) the watcher compares the TV's app list with the exported `tv-catalog/catalog.json`. If apps were installed or removed it logs the change, shows it as `apps_changed` in `status`, and sends one Mac notification per distinct change (UNVERIFIED that the notification appears for a background agent). Nothing is rebuilt unless you ask.
+
+- By hand, one command from the repo: `./scripts/refresh-tv.sh` (export the app list and icons, build, install on the TV, open V/HOME).
+- Automatically: `"$PY" -m vhome_companion autorefresh on` (`off` to stop; `--command` to run something else). It then runs the script only when the app list changed, only while V/HOME itself is in front on the TV, and at most once an hour. The install restarts V/HOME on the TV for a few seconds. Needs Node and the TV's saved `tv` device available to the helper (the script adds `/opt/homebrew/bin` to PATH). Not yet checked on the TV.

@@ -19,9 +19,17 @@ const FOCUS_KEY = 'vhomeLauncher.lastFocus'
 const readFocus = () => { try { return sessionStorage.getItem(FOCUS_KEY) } catch { return null } }
 const writeFocus = (id: string) => { try { sessionStorage.setItem(FOCUS_KEY, id) } catch { /* private mode */ } }
 
-function Tile({ id, scope, initial, className = '', onClick, children }: { id: string; scope?: string; initial?: boolean; className?: string; onClick: () => void; children: ReactNode }) {
+function Tile({ id, scope, initial, className = '', onClick, onLongPress, children }: { id: string; scope?: string; initial?: boolean; className?: string; onClick: () => void; onLongPress?: () => void; children: ReactNode }) {
   const { className: fc, ref, ...fp } = useFocusable(id, { scope, initial })
-  return <button ref={ref} {...fp} className={`${fc} l-tile ${className}`} onClick={onClick}>{children}</button>
+  const lp = useRef(onLongPress); lp.current = onLongPress
+  useEffect(() => { // holding OK fires 'longpress' (see FocusProvider)
+    const el = (ref as { current: HTMLElement | null }).current
+    if (!el || !onLongPress) return
+    const h = () => lp.current?.()
+    el.addEventListener('longpress', h)
+    return () => el.removeEventListener('longpress', h)
+  }, [ref, !!onLongPress]) // eslint-disable-line react-hooks/exhaustive-deps
+  return <button ref={ref} {...fp} data-longpress={onLongPress ? '1' : undefined} className={`${fc} l-tile ${className}`} onClick={onClick}>{children}</button>
 }
 
 const tint = (e: CatalogEntry) => e.color ?? `hsl(${fnv1a(e.id) % 360} 30% 28%)`
@@ -36,8 +44,8 @@ function Art({ entry, small }: { entry: CatalogEntry; small?: boolean }) {
   </span>
 }
 
-function AppTile({ entry, idPrefix, scope, initial, onOpen }: { entry: CatalogEntry; idPrefix: string; scope?: string; initial: boolean; onOpen: (e: CatalogEntry) => void }) {
-  return <Tile id={`${idPrefix}-${entry.id}`} scope={scope} initial={initial} className={entry.unavailable ? 'off' : ''} onClick={() => onOpen(entry)}>
+function AppTile({ entry, idPrefix, scope, initial, onOpen, onEdit }: { entry: CatalogEntry; idPrefix: string; scope?: string; initial: boolean; onOpen: (e: CatalogEntry) => void; onEdit?: (e: CatalogEntry) => void }) {
+  return <Tile id={`${idPrefix}-${entry.id}`} scope={scope} initial={initial} className={entry.unavailable ? 'off' : ''} onClick={() => onOpen(entry)} onLongPress={onEdit ? () => onEdit(entry) : undefined}>
     <Art entry={entry} />
     <span className="l-lbl"><span className="ttl">{entry.title}</span>{entry.unavailable && <span className="sub">Not on this TV</span>}</span>
   </Tile>
@@ -81,7 +89,7 @@ function PersonalCard() {
 const PRESETS = [15, 30, 45, 60, 90]
 /** Sleep-timer shortcuts, always on screen at the right. Uses the same adapter and honest messages as Quick controls. */
 function TimerPanel() {
-  const { timerState, now, tz } = useApp()
+  const { timerState, now, tz, timerAt, canCheckTimer, checkTimer } = useApp()
   const { msg, run, verified } = useTimerActions()
   const status = timerState === 'unavailable' ? 'Timer status unavailable'
     : timerState.scheduled ? `TV off at ${fmtTime(timerState.shutdownAt, tz)} · ${Math.max(0, Math.ceil((timerState.shutdownAt - now.getTime()) / 60000))} min left` : 'No timer set'
@@ -92,6 +100,8 @@ function TimerPanel() {
       {PRESETS.map((m) => <Tile key={m} id={`l-t-${m}`} className="l-tbtn" onClick={() => void run((a) => a.schedule(m))}><b>{m}</b><span>min</span></Tile>)}
     </div>
     <Tile id="l-t-cancel" className="l-tbtn wide ghost" onClick={() => void run((a) => a.cancel())}>Cancel timer</Tile>
+    {canCheckTimer && <Tile id="l-t-check" className="l-tbtn wide ghost" onClick={checkTimer}>Check timer</Tile>}
+    {timerAt != null && <div className="l-tage">Confirmed by V/TV Sleep at {fmtTime(timerAt, tz)}</div>}
     <div className={`l-tmsg${msg?.warn ? ' warn' : ''}`} role="status">{msg?.text ?? (verified ? '' : 'Not yet verified on this TV')}</div>
   </aside>
 }
@@ -100,6 +110,8 @@ export function Launcher() {
   const { catalog, launcherPrefs: prefs, launch } = useApp()
   const { focusedId } = useFocusCtx()
   const [editing, setEditing] = useState(false)
+  const [editStart, setEditStart] = useState<string | null>(null)
+  const editApp = (e: CatalogEntry) => { setEditStart(e.id); setEditing(true) }
   const [openFolder, setOpenFolder] = useState<string | null>(null)
   const layout = useMemo(() => applyLayout(catalog, prefs), [catalog, prefs])
   const { dock, inputs, folders } = layout
@@ -132,9 +144,9 @@ export function Launcher() {
     <div className="l-scroll" ref={scroller}>
       <PersonalCard />
       <section className="l-sec" data-first="1">
-        <div className="l-h"><span>Favorites</span><Tile id="l-edit" className="chip" onClick={() => setEditing(true)}>Edit</Tile></div>
+        <div className="l-h"><span>Favorites</span><span className="l-hint">Hold OK on an app to edit it</span><Tile id="l-edit" className="chip" onClick={() => { setEditStart(null); setEditing(true) }}>Edit</Tile></div>
         <div className="l-grid">{dockSlots.map((e, i) => e
-          ? <AppTile key={e.id} entry={e} idPrefix="l-dock" initial={`l-dock-${e.id}` === initialId} onOpen={open} />
+          ? <AppTile key={e.id} entry={e} idPrefix="l-dock" onEdit={editApp} initial={`l-dock-${e.id}` === initialId} onOpen={open} />
           : <div key={`s${i}`} className="l-slot" aria-hidden />)}</div>
       </section>
       {folders.length > 0 && <section className="l-sec">
@@ -144,18 +156,18 @@ export function Launcher() {
       <section className="l-sec">
         <div className="l-h"><span>{dock.length ? 'More apps' : 'Apps'}</span><span className="l-count">{grid.length}</span></div>
         <div className="l-grid">
-          {grid.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-app" initial={`l-app-${e.id}` === initialId} onOpen={open} />)}
+          {grid.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-app" onEdit={editApp} initial={`l-app-${e.id}` === initialId} onOpen={open} />)}
           {!grid.length && <div className="l-dim">{folders.length ? 'Everything else is in your folders.' : 'No apps yet. They appear once this TV\'s list is read.'}</div>}
         </div>
       </section>
       {inputs.length > 0 && <section className="l-sec">
         <div className="l-h"><span>Inputs</span></div>
-        <div className="l-grid">{inputs.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-input" initial={`l-input-${e.id}` === initialId} onOpen={open} />)}</div>
+        <div className="l-grid">{inputs.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-input" onEdit={editApp} initial={`l-input-${e.id}` === initialId} onOpen={open} />)}</div>
       </section>}
     </div>
     <TimerPanel />
     {folder && <FolderOverlay folder={folder.folder} apps={folder.apps} onClose={() => setOpenFolder(null)} onOpen={open} />}
-    {editing && <LauncherEdit onClose={() => setEditing(false)} />}
+    {editing && <LauncherEdit startWith={editStart} onClose={() => setEditing(false)} />}
   </div>
 }
 

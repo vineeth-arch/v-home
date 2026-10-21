@@ -11,6 +11,7 @@ export interface CatalogEntry {
   title: string
   kind: 'app' | 'input'
   icon: string | null // basename in tv-catalog/icons, or null
+  iconSrc?: string // icon file on the TV itself (apps found live, not in the bundled export)
   color?: string | null // '#rrggbb' edge colour of the icon, used as the tile background
   source: EntrySource
   system: boolean
@@ -103,6 +104,13 @@ const USER_FACING = new Set(['com.webos.app.browser', 'com.webos.app.photovideo'
 export const isSystemApp = (id: string, kind: CatalogEntry['kind'], hiddenByTv = false) =>
   kind === 'app' && (hiddenByTv || id === VHOME_ID || (id.startsWith('com.webos.app.') && !USER_FACING.has(id)))
 
+/** Icon path from the TV's own app list -> a file:// URL, only for a plain absolute image path (no '..', no query). */
+export function tvIconSrc(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const p = raw.startsWith('file://') ? raw.slice(7) : raw
+  return /^\/[A-Za-z0-9._\/-]{1,200}\.(png|jpe?g)$/i.test(p) && !p.includes('..') ? `file://${p}` : undefined
+}
+
 const PREV_KEY = 'vhomeLauncher.catalog.v1'
 /** Remembers the last catalog on this TV so apps that disappear stay in the layout, greyed ("Not on this TV"),
  *  instead of silently vanishing. Only entries the layout still references are kept as unavailable. Never throws. */
@@ -116,7 +124,7 @@ export function withRemembered(current: CatalogEntry[], referenced: (id: string)
 
 /** URL usable in <img src> for the entry's bundled icon, or null (show lettered fallback). */
 export function iconUrl(e: CatalogEntry): string | null {
-  if (!e.icon) return null
+  if (!e.icon) return e.iconSrc ?? null
   const key = Object.keys(iconFiles).find((k) => k.endsWith('/' + e.icon))
   const v = key ? iconFiles[key] : null
   return typeof v === 'string' && v ? v : null

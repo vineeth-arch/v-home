@@ -7,6 +7,7 @@ import { MorningRitual, BedtimeRitual } from './rituals'
 import { Ambient } from './Ambient'
 import { Studio } from './Studio'
 import { Launcher } from './Launcher'
+import { Help } from './Help'
 
 const TITLES: Record<Exclude<Screen, 'home' | 'launcher'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', settings: 'Settings', studio: 'Studio' }
 
@@ -51,6 +52,7 @@ export function App() {
       {overlay === 'bedtime' && <BedtimeRitual onClose={close} />}
       {overlay === 'pairing' && <Pairing onClose={close} />}
       {overlay === 'ambient' && <Ambient onClose={close} />}
+      {overlay === 'help' && <Help onClose={close} />}
       {overlay === 'exit' && <ExitDialog onClose={close} />}
     </div>
   )

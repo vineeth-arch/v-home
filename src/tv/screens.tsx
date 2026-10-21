@@ -234,7 +234,7 @@ export function Ideas() {
 }
 
 export function Settings() {
-  const { snap, ctrl, setOverlay, platform, live } = useApp()
+  const { snap, ctrl, setOverlay, platform, live, tvControls } = useApp()
   const [confirmUnpair, setConfirmUnpair] = useState(false)
   const rows: [string, string][] = [
     ['Household', `${snap.household.name} · ${snap.household.people.map((p) => p.name).join(', ')}`],
@@ -243,12 +243,13 @@ export function Settings() {
     ['Weather', 'Weather by Open-Meteo'],
     ['Data', live ? `Household cloud · cache: ${live.cacheBackend || 'starting'}` : 'Sample data (simulation)'],
     ['Last sync', new Date(snap.syncedAt).toLocaleTimeString()],
-    ['Volume, sound, picture', 'Not shown: only controls verified on this TV appear in Quick controls.'],
+    ['Volume and picture', `Volume ${tvControls.volume.cap}, picture ${tvControls.picture.cap}. Controls appear in Quick controls only when this TV allows them.`],
   ]
   return <div className="settings-scroll">
     {live && live.status !== 'ready' && <PairingGate />}
     <div className="card">{rows.map(([a, b]) => <div className="row" key={a}><span className="t">{a}</span><span>{b}</span></div>)}</div>
     <div className="presets">
+      <Btn id="set-help" className="ghost" onClick={() => setOverlay('help')}>Help</Btn>
       {!confirmUnpair
         ? <Btn id="set-unpair" className="ghost" onClick={() => setConfirmUnpair(true)}>Unpair this TV</Btn>
         : <><span className="small dim" style={{ alignSelf: 'center' }}>This TV will forget the household.</span>

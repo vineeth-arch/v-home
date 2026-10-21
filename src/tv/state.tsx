@@ -11,13 +11,19 @@ import { useLive, type Live } from './live'
 import { FallbackTimer, MockTimer, parseReport, TimerController, type TimerState } from '../adapters/timer'
 import { resolvePrefs } from '../shared/prefs'
 import { studioVisible } from '../../supabase/functions/_shared/studio'
-import { bundledCatalog, isSystemApp, withRemembered, type CatalogEntry, type Capability } from '../shared/catalog'
+import { bundledCatalog, isSystemApp, tvIconSrc, withRemembered, type CatalogEntry, type Capability } from '../shared/catalog'
 import { loadPrefs, savePrefs, MAX_FAVORITES, type LauncherPrefs } from '../shared/launcherPrefs'
+import { probePicture, probeVolume, setMuted, setPictureMode, volumeStep } from '../adapters/tvcontrols'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
 export type Screen = 'launcher' | 'home' | 'watch' | 'us' | 'ideas' | 'settings' | 'studio'
-export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing' | 'ambient' | 'exit'
+export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing' | 'ambient' | 'help' | 'exit'
 
+export interface TvControls {
+  volume: { cap: Capability; volume: number | null; muted: boolean | null }
+  picture: { cap: Capability; mode: string | null }
+  volumeUp(): void; volumeDown(): void; toggleMute(): void; setPicture(mode: string): void
+}
 export interface AppState {
   snap: Snapshot; tz: string; now: Date; mode: Mode; manualMode: Mode | null; setManualMode(m: Mode | null): void
   guest: boolean; setGuest(g: boolean): void
@@ -31,6 +37,8 @@ export interface AppState {
   toast: string | null
   images: Record<string, string>
   catalog: CatalogEntry[]
+  tvControls: TvControls
+  timerAt: number | null; canCheckTimer: boolean; checkTimer(): void // when V/TV Sleep last confirmed the timer; ask it again
   launcherPrefs: LauncherPrefs; setLauncherPrefs(p: LauncherPrefs): void
   capabilities: Record<string, Capability>
 }
@@ -130,6 +138,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const r = await ctrl.refresh()
     setTimerState(r.kind === 'confirmed' ? r.state : 'unavailable')
   }, [ctrl])
+  const [timerAt, setTimerAt] = useState<number | null>(timerAdapter instanceof FallbackTimer ? timerAdapter.reportAt : null)
+  const canCheckTimer = timerAdapter instanceof FallbackTimer
+  const lastCheck = useRef(0)
+  const checkTimer = useCallback(() => { if (timerAdapter instanceof FallbackTimer) { lastCheck.current = Date.now(); void timerAdapter.check() } }, [timerAdapter])
+  useEffect(() => { // a timer we believe is running may have been changed elsewhere: ask V/TV Sleep again when it is stale
+    if (!(timerAdapter instanceof FallbackTimer)) return
+    const stale = () => timerAdapter.believesRunning && Date.now() - (timerAdapter.reportAt ?? 0) > 10 * 60_000 && Date.now() - lastCheck.current > 10 * 60_000
+    const onVis = () => { if (!document.hidden && stale()) checkTimer() }
+    document.addEventListener('visibilitychange', onVis)
+    const first = setTimeout(onVis, 4000)
+    return () => { document.removeEventListener('visibilitychange', onVis); clearTimeout(first) }
+  }, [timerAdapter, checkTimer])
   useEffect(() => { // V/TV Sleep reopens V/HOME with its confirmed result after a one-click timer request
     if (!(timerAdapter instanceof FallbackTimer)) return
     const take = (raw: unknown) => {
@@ -137,6 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (typeof raw === 'string') { try { p = JSON.parse(raw) } catch { return } }
       const rep = timerAdapter.ingest(parseReport((p as { timer?: unknown } | null)?.timer))
       if (!rep) return
+      setTimerAt(timerAdapter.reportAt)
       if (rep.op === 'error') { setToast(`V/TV Sleep: ${rep.error}`); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 6000) }
       void refreshTimer()
     }
@@ -169,11 +190,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (stop) return
       if ('ok' in r && r.ok) {
         setLpCap('supported')
-        const raw = Array.isArray(r.data.launchPoints) ? (r.data.launchPoints as { id?: unknown; hidden?: unknown; visible?: unknown }[]) : []
+        const raw = Array.isArray(r.data.launchPoints) ? (r.data.launchPoints as { id?: unknown; hidden?: unknown; visible?: unknown; icon?: unknown; largeIcon?: unknown }[]) : []
+        const iconOf = new Map(raw.map((x) => [String(x.id), tvIconSrc(x.largeIcon) ?? tvIconSrc(x.icon)]))
         const hiddenByTv = new Set(raw.filter((x) => x.hidden === true || x.visible === false).map((x) => String(x.id)))
         setTvApps(parseLaunchPoints(r.data).map((a) => {
           const kind = a.id.includes('.hdmi') ? 'input' as const : 'app' as const
-          return { id: a.id, title: a.label, kind, icon: null, source: 'tv' as const, system: isSystemApp(a.id, kind, hiddenByTv.has(a.id)) }
+          return { id: a.id, title: a.label, kind, icon: null, iconSrc: iconOf.get(a.id), source: 'tv' as const, system: isSystemApp(a.id, kind, hiddenByTv.has(a.id)) }
         }))
       } else if ('ok' in r && /denied|permission|not allowed|security/i.test(r.error)) setLpCap('denied')
     }).catch(() => { if (!stop) setLpCap('unavailable') }).finally(() => { if (!stop) setLpDone(true) })
@@ -197,11 +219,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [launcherPrefs, hasHousehold, pinnedIds.join(), setLauncherPrefs]) // eslint-disable-line react-hooks/exhaustive-deps
   // unpaired and not yet seeded: show the default strip without saving it
   const shownPrefs = launcherPrefs.seeded ? launcherPrefs : { ...launcherPrefs, favorites: pinnedIds }
-  const capabilities: Record<string, Capability> = { listLaunchPoints: lpCap, timerDirect: ctrl.verified ? 'supported' : 'unverified', homeRedirect: 'unverified' }
+  // Volume and picture: a read-only probe decides whether Quick controls shows them at all.
+  const [vol, setVol] = useState<TvControls['volume']>({ cap: 'unverified', volume: null, muted: null })
+  const [pic, setPic] = useState<TvControls['picture']>({ cap: 'unverified', mode: null })
+  const probeControls = useCallback(() => { void probeVolume(platform).then(setVol); void probePicture(platform).then((r) => setPic({ cap: r.cap, mode: r.mode })) }, [platform])
+  useEffect(() => {
+    probeControls()
+    const vis = () => { if (!document.hidden) probeControls() }
+    document.addEventListener('visibilitychange', vis)
+    return () => document.removeEventListener('visibilitychange', vis)
+  }, [probeControls])
+  const tvControls: TvControls = useMemo(() => ({
+    volume: vol, picture: pic,
+    volumeUp: () => void volumeStep(platform, true).then(() => probeControls()),
+    volumeDown: () => void volumeStep(platform, false).then(() => probeControls()),
+    toggleMute: () => void setMuted(platform, !(vol.muted ?? false)).then(() => probeControls()),
+    setPicture: (m: string) => void setPictureMode(platform, m).then(() => probeControls()),
+  }), [vol, pic, platform, probeControls])
+  const capabilities: Record<string, Capability> = { volume: vol.cap, picture: pic.cap, listLaunchPoints: lpCap, timerDirect: ctrl.verified ? 'supported' : 'unverified', homeRedirect: 'unverified' }
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, studioOn, overlay, setOverlay,
     platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast, images: isLive ? live.images : {},
-    catalog, launcherPrefs: shownPrefs, setLauncherPrefs, capabilities,
+    catalog, tvControls, timerAt, canCheckTimer, checkTimer, launcherPrefs: shownPrefs, setLauncherPrefs, capabilities,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

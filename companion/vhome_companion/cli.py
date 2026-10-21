@@ -8,6 +8,7 @@ import logging.handlers
 import os
 import random
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -15,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import catalog, ssap
+from . import appswatch, catalog, ssap
 from .watcher import ConfigError, Watcher
 
 LABEL = "com.designinnsaeit.vhome-companion"
@@ -23,7 +24,7 @@ FG_URI = "ssap://com.webos.applicationManager/getForegroundAppInfo"
 LAUNCH_URI = "ssap://system.launcher/launch"
 EX_CONFIG = 78
 DEFAULTS = {"host": "", "vhome_id": "com.designinnsaeit.vhome", "home_ids": [],
-            "double_home_escape": False}
+            "double_home_escape": False, "auto_refresh": False, "refresh_command": ""}
 log = logging.getLogger("vhome.cli")
 
 
@@ -127,6 +128,10 @@ class Runner:
         self.last_event = None
         self.client = None
         self.tasks = set()
+        self.cfg = {}
+        self.apps_sig = None       # the app change we already told the user about
+        self.last_refresh = None   # monotonic time of the last unattended refresh
+        self.apps_changed = None   # {'added': [...], 'removed': [...]} while the exported catalog is out of date
 
     def sync_flag(self):
         exists = self.flag.exists()
@@ -166,7 +171,7 @@ class Runner:
 
     def write_state(self):
         st = {"pid": os.getpid(), "host": self.host, "connected": self.connected,
-              "last_event": self.last_event, "last_error": self.last_error,
+              "last_event": self.last_event, "last_error": self.last_error, "apps_changed": self.apps_changed,
               "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "watcher": self.w.snapshot()}
         try:
@@ -174,9 +179,47 @@ class Runner:
         except OSError as e:
             log.warning("could not write state.json: %s", e)
 
+    async def check_apps(self):
+        """Compare the TV's app list with the exported catalog. Notify, or (opt-in) refresh V/HOME while it is in front."""
+        out = Path(self.cfg.get("catalog_dir") or default_catalog_dir() or "")
+        known = appswatch.known_ids(out) if str(out) else None
+        lp = await self.client.request(catalog.LIST_URI)
+        devs = await self.client.request(catalog.INPUT_URI)
+        added, removed = appswatch.diff(appswatch.app_ids(lp.get("launchPoints"), devs.get("devices")), known)
+        front = self.w.last_app == self.w.vhome_id
+        action, sig = appswatch.decide(added, removed, self.apps_sig, bool(self.cfg.get("auto_refresh")), self.cfg.get("refresh_command") or "", front, self.clock(), self.last_refresh)
+        self.apps_changed = {"added": sorted(added), "removed": sorted(removed)} if sig else None
+        if action == "notify":
+            self.apps_sig = sig
+            msg = f"{len(added)} new and {len(removed)} removed apps on the TV. Run scripts/refresh-tv.sh to update V/HOME."
+            log.info("apps changed: +%s -%s", sorted(added), sorted(removed))
+            await asyncio.to_thread(appswatch.notify, "V/HOME", msg)
+        elif action == "refresh":
+            self.last_refresh = self.clock()
+            log.info("apps changed: +%s -%s; refreshing V/HOME (auto_refresh on, V/HOME in front)", sorted(added), sorted(removed))
+            try:
+                r = await asyncio.to_thread(subprocess.run, shlex.split(self.cfg["refresh_command"]), capture_output=True, text=True, timeout=900)
+                log.info("refresh finished with exit code %s: %s", r.returncode, (r.stdout or r.stderr or "").strip()[-300:])
+            except (OSError, subprocess.SubprocessError) as e:
+                log.warning("refresh failed: %s", e)
+        self.write_state()
+
+    async def apps_loop(self):
+        await asyncio.sleep(60)  # let the first connection settle
+        while True:
+            try:
+                await self.check_apps()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # the TV may be busy or sleeping; try again next round
+                log.info("app list check skipped: %s", e)
+            await asyncio.sleep(appswatch.POLL_S)
+
     async def session(self, client):
         self.client = client
         sub = await client.subscribe(FG_URI)
+        poller = asyncio.create_task(self.apps_loop())
+        self.tasks.add(poller)
         self.sync_flag()
         self.apply(self.w.on_connected(self.clock()))
         try:
@@ -258,6 +301,7 @@ def cmd_watch(args):
         print("another watcher for this TV is already running", file=sys.stderr)
         return 0 if args.service else 1
     runner = Runner(w, d, cfg["host"])
+    runner.cfg = cfg
 
     async def main():
         task = asyncio.create_task(runner.forever(cfg, key, pin))
@@ -410,6 +454,25 @@ def cmd_sync_catalog(args):
     return rc
 
 
+def cmd_autorefresh(args):
+    d = state_dir()
+    cfg = load_config(d)
+    if args.mode == "off":
+        cfg["auto_refresh"] = False
+        save_config(d, cfg)
+        print("Auto refresh is off. The helper still notifies you when apps change.")
+        return 0
+    root = default_catalog_dir()
+    cmd = args.command or (str(root.parent / "scripts" / "refresh-tv.sh") if root else "")
+    if not cmd:
+        print("error: run from the repo root or pass --command", file=sys.stderr)
+        return 1
+    cfg["auto_refresh"], cfg["refresh_command"] = True, cmd
+    save_config(d, cfg)
+    print(f"Auto refresh is on: {cmd}\nIt runs only when apps changed, V/HOME is in front on the TV, and at most once an hour.")
+    return 0
+
+
 def default_catalog_dir():
     for base in (Path.cwd(), Path(__file__).resolve().parents[2]):
         if (base / "package.json").is_file() and (base / "scripts").is_dir():
@@ -481,6 +544,10 @@ def main(argv=None):
     s.set_defaults(fn=cmd_watch)
     for name, fn in (("status", cmd_status), ("pause", cmd_pause), ("resume", cmd_resume), ("stop", cmd_stop)):
         sub.add_parser(name).set_defaults(fn=fn)
+    s = sub.add_parser("autorefresh", help="refresh V/HOME by itself when TV apps change (opt-in)")
+    s.add_argument("mode", choices=["on", "off"])
+    s.add_argument("--command", help="command to run (default: scripts/refresh-tv.sh in this repo)")
+    s.set_defaults(fn=cmd_autorefresh)
     s = sub.add_parser("sync-catalog", help="write tv-catalog/ from the TV")
     s.add_argument("--out")
     s.set_defaults(fn=cmd_sync_catalog)
