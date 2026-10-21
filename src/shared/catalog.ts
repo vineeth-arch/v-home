@@ -11,6 +11,7 @@ export interface CatalogEntry {
   title: string
   kind: 'app' | 'input'
   icon: string | null // basename in tv-catalog/icons, or null
+  color?: string | null // '#rrggbb' edge colour of the icon, used as the tile background
   source: EntrySource
   system: boolean
   unavailable?: boolean // was in a previous catalog, missing now; layout keeps it
@@ -18,6 +19,7 @@ export interface CatalogEntry {
 export interface Catalog { schema: 1; generatedAt: string; tv: { model: string; firmware: string }; entries: CatalogEntry[] }
 
 const ICON_RE = /^[a-zA-Z0-9._-]{1,100}\.(png|jpe?g)$/i
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/
 const SOURCES: EntrySource[] = ['companion', 'tv', 'curated']
 export const MAX_ENTRIES = 200
 
@@ -30,7 +32,8 @@ function parseEntry(raw: unknown): CatalogEntry | null {
   if (r.kind !== 'app' && r.kind !== 'input') return null
   if (r.icon !== null && r.icon !== undefined && !(typeof r.icon === 'string' && ICON_RE.test(r.icon))) return null
   if (!SOURCES.includes(r.source as EntrySource)) return null
-  return { id: r.id, title, kind: r.kind, icon: typeof r.icon === 'string' ? r.icon : null, source: r.source as EntrySource, system: r.system === true }
+  const color = typeof r.color === 'string' && COLOR_RE.test(r.color) ? r.color.toLowerCase() : null
+  return { id: r.id, title, kind: r.kind, icon: typeof r.icon === 'string' ? r.icon : null, color, source: r.source as EntrySource, system: r.system === true }
 }
 
 /** Validates a raw catalog.json value. Drops bad entries; null when the file itself is invalid. */
@@ -96,7 +99,7 @@ export function mergeEntries(prev: CatalogEntry[], next: CatalogEntry[]): Catalo
 
 // Same rule as companion catalog.py `_is_system`: internal webOS helpers and V/HOME itself stay out of the grid.
 export const VHOME_ID = 'com.designinnsaeit.vhome'
-const USER_FACING = new Set(['com.webos.app.browser', 'com.webos.app.photovideo', 'com.webos.app.music', 'com.webos.app.screenshare'])
+const USER_FACING = new Set(['com.webos.app.browser', 'com.webos.app.photovideo', 'com.webos.app.music', 'com.webos.app.screenshare', 'com.webos.app.livetv'])
 export const isSystemApp = (id: string, kind: CatalogEntry['kind'], hiddenByTv = false) =>
   kind === 'app' && (hiddenByTv || id === VHOME_ID || (id.startsWith('com.webos.app.') && !USER_FACING.has(id)))
 

@@ -42,7 +42,7 @@ export function renameFolder(p: LauncherPrefs, folderId: string): LauncherPrefs 
 export function AppIcon({ entry, size = 64 }: { entry: CatalogEntry; size?: number }) {
   const url = iconUrl(entry)
   const [failed, setFailed] = useState(false)
-  const style = { '--s': `${size}px`, '--h': fnv1a(entry.id) % 360 } as React.CSSProperties
+  const style = { '--s': `${size}px`, '--h': fnv1a(entry.id) % 360, '--c': entry.color ?? undefined } as React.CSSProperties
   if (url && !failed) return <img className="l-ico" style={style} src={url} alt="" onError={() => setFailed(true)} />
   return <span className="l-ico letter" style={style} aria-hidden>{(entry.title.trim()[0] ?? '?').toUpperCase()}</span>
 }

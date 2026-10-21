@@ -1,12 +1,13 @@
 // Launcher home. Reads catalog/prefs from useApp(); never needs pairing or network.
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import './launcher.css'
 import { useApp } from './state'
 import { useFocusable, useFocusCtx, useLayer } from './FocusProvider'
 import { Btn } from './ui'
 import { AppIcon, LauncherEdit } from './LauncherEdit'
+import { fnv1a } from '../shared/daily'
 import { applyLayout, MAX_FAVORITES, WALLPAPERS, type Folder } from '../shared/launcherPrefs'
-import { bundledCatalog, type CatalogEntry } from '../shared/catalog'
+import { bundledCatalog, iconUrl, type CatalogEntry } from '../shared/catalog'
 import { pickDaily } from '../shared/reflections'
 import { localDate } from '../shared/daily'
 import { sharedNote } from '../shared/partnerNotes'
@@ -22,16 +23,28 @@ function Tile({ id, scope, initial, className = '', onClick, children }: { id: s
   return <button ref={ref} {...fp} className={`${fc} l-tile ${className}`} onClick={onClick}>{children}</button>
 }
 
-function AppTile({ entry, idPrefix, scope, initial, compact, onOpen }: { entry: CatalogEntry; idPrefix: string; scope?: string; initial: boolean; compact?: boolean; onOpen: (e: CatalogEntry) => void }) {
-  return <Tile id={`${idPrefix}-${entry.id}`} scope={scope} initial={initial} className={`${compact ? 'compact ' : ''}${entry.unavailable ? 'off' : ''}`} onClick={() => onOpen(entry)}>
-    <AppIcon entry={entry} size={compact ? 52 : 64} />
+const tint = (e: CatalogEntry) => e.color ?? `hsl(${fnv1a(e.id) % 360} 30% 28%)`
+
+/** Big colour-filled square: the icon's own edge colour is the background, so the tile looks like the app. */
+function Art({ entry }: { entry: CatalogEntry }) {
+  const url = iconUrl(entry)
+  const [failed, setFailed] = useState(false)
+  return <span className="l-art" style={{ '--c': tint(entry) } as CSSProperties}>
+    {url && !failed ? <img src={url} alt="" onError={() => setFailed(true)} />
+      : <span className="l-letter" aria-hidden>{(entry.title.trim()[0] ?? '?').toUpperCase()}</span>}
+  </span>
+}
+
+function AppTile({ entry, idPrefix, scope, initial, onOpen }: { entry: CatalogEntry; idPrefix: string; scope?: string; initial: boolean; onOpen: (e: CatalogEntry) => void }) {
+  return <Tile id={`${idPrefix}-${entry.id}`} scope={scope} initial={initial} className={entry.unavailable ? 'off' : ''} onClick={() => onOpen(entry)}>
+    <Art entry={entry} />
     <span className="l-lbl"><span className="ttl">{entry.title}</span>{entry.unavailable && <span className="sub">Not on this TV</span>}</span>
   </Tile>
 }
 
 function FolderTile({ folder, apps, initial, onOpen }: { folder: Folder; apps: CatalogEntry[]; initial: boolean; onOpen: () => void }) {
   return <Tile id={`l-folder-${folder.id}`} initial={initial} onClick={onOpen}>
-    <span className="l-mini">{apps.slice(0, 4).map((a) => <AppIcon key={a.id} entry={a} size={28} />)}</span>
+    <span className="l-art l-folder-art"><span className="l-mini">{apps.slice(0, 4).map((a) => <AppIcon key={a.id} entry={a} size={44} />)}</span></span>
     <span className="l-lbl"><span className="ttl">{folder.name}</span></span>
   </Tile>
 }
@@ -68,7 +81,8 @@ export function Launcher() {
   const [editing, setEditing] = useState(false)
   const [openFolder, setOpenFolder] = useState<string | null>(null)
   const layout = useMemo(() => applyLayout(catalog, prefs), [catalog, prefs])
-  const { dock, grid, inputs, folders } = layout
+  const { dock, inputs, folders } = layout
+  const grid = useMemo(() => layout.grid.filter((e) => !dock.some((d) => d.id === e.id)), [layout.grid, dock]) // favorites are already shown above
 
   useEffect(() => { // wallpaper is painted on <html> so it fills the screen behind the shell's header and nav
     document.documentElement.dataset.lWall = prefs.wallpaper
@@ -84,26 +98,37 @@ export function Launcher() {
   const dockSlots = Array.from({ length: MAX_FAVORITES }, (_, i) => dock[i])
   const folder = folders.find((f) => f.folder.id === openFolder)
 
+  const scroller = useRef<HTMLDivElement>(null)
+  useEffect(() => { // moving up into a section's first row brings its heading (or the very top) into view
+    const el = document.querySelector<HTMLElement>('.launcher [data-focused]'), sc = scroller.current
+    const sec = el?.closest<HTMLElement>('section')
+    if (!el || !sc || !sec) return
+    if (sec.dataset.first) { if (el.offsetTop - sec.offsetTop < 240) sc.scrollTop = 0; return }
+    if (el.offsetTop - sec.offsetTop < 240 && sc.scrollTop > sec.offsetTop - 12) sc.scrollTop = Math.max(0, sec.offsetTop - 12)
+  }, [focusedId])
+
   return <div className="launcher" data-wallpaper={prefs.wallpaper} data-motion={prefs.reducedMotion ? 'reduced' : 'full'}>
-    <PersonalCard />
-    <section className="l-sec">
-      <div className="l-h"><span>Favorites</span><Tile id="l-edit" className="chip" onClick={() => setEditing(true)}>Edit</Tile></div>
-      <div className="l-grid">{dockSlots.map((e, i) => e
-        ? <AppTile key={e.id} entry={e} idPrefix="l-dock" compact initial={`l-dock-${e.id}` === initialId} onOpen={open} />
-        : <div key={`s${i}`} className="l-slot" aria-hidden />)}</div>
-    </section>
-    <section className="l-sec l-apps">
-      <div className="l-h"><span>Apps</span></div>
-      <div className="l-scroll"><div className="l-grid">
-        {folders.map((f) => <FolderTile key={f.folder.id} folder={f.folder} apps={f.apps} initial={`l-folder-${f.folder.id}` === initialId} onOpen={() => setOpenFolder(f.folder.id)} />)}
-        {grid.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-app" initial={`l-app-${e.id}` === initialId} onOpen={open} />)}
-        {!grid.length && !folders.length && <div className="l-dim">No apps yet. They appear once this TV's list is read.</div>}
-      </div></div>
-    </section>
-    {inputs.length > 0 && <section className="l-sec">
-      <div className="l-h"><span>Inputs</span></div>
-      <div className="l-grid">{inputs.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-input" compact initial={`l-input-${e.id}` === initialId} onOpen={open} />)}</div>
-    </section>}
+    <div className="l-scroll" ref={scroller}>
+      <PersonalCard />
+      <section className="l-sec" data-first="1">
+        <div className="l-h"><span>Favorites</span><Tile id="l-edit" className="chip" onClick={() => setEditing(true)}>Edit</Tile></div>
+        <div className="l-grid">{dockSlots.map((e, i) => e
+          ? <AppTile key={e.id} entry={e} idPrefix="l-dock" initial={`l-dock-${e.id}` === initialId} onOpen={open} />
+          : <div key={`s${i}`} className="l-slot" aria-hidden />)}</div>
+      </section>
+      <section className="l-sec">
+        <div className="l-h"><span>{dock.length ? 'More apps' : 'Apps'}</span><span className="l-count">{grid.length + folders.length}</span></div>
+        <div className="l-grid">
+          {folders.map((f) => <FolderTile key={f.folder.id} folder={f.folder} apps={f.apps} initial={`l-folder-${f.folder.id}` === initialId} onOpen={() => setOpenFolder(f.folder.id)} />)}
+          {grid.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-app" initial={`l-app-${e.id}` === initialId} onOpen={open} />)}
+          {!grid.length && !folders.length && <div className="l-dim">No apps yet. They appear once this TV's list is read.</div>}
+        </div>
+      </section>
+      {inputs.length > 0 && <section className="l-sec">
+        <div className="l-h"><span>Inputs</span></div>
+        <div className="l-grid">{inputs.map((e) => <AppTile key={e.id} entry={e} idPrefix="l-input" initial={`l-input-${e.id}` === initialId} onOpen={open} />)}</div>
+      </section>}
+    </div>
     {folder && <FolderOverlay folder={folder.folder} apps={folder.apps} onClose={() => setOpenFolder(null)} onOpen={open} />}
     {editing && <LauncherEdit onClose={() => setEditing(false)} />}
   </div>

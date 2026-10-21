@@ -50,3 +50,23 @@ Nothing below has been run on the TV yet (TV was off). "Desktop" = automated tes
 | Timer schedule/status/cancel; handoff never shows a countdown | existing tests green | NOT VERIFIED (gate H4) |
 
 Checklists H0–H6: [COMPANION.md](COMPANION.md).
+
+## Hardware results, 2026-10-21 (LG 43NU885BPLA, TV 192.168.29.225)
+
+First session with the TV on. Observed by the owner on screen, plus the companion log.
+
+| Item | Result |
+|---|---|
+| IPK 0.2.0 installed with `ares-install`; V/TV Sleep still installed | VERIFIED |
+| Companion pairing (wss:3001, unsigned manifest, certificate pinned) | VERIFIED: prompt accepted on the TV |
+| `listLaunchPoints`, `getForegroundAppInfo`, `getExternalInputList` over SSAP | VERIFIED (supported). 25 apps and 3 HDMI inputs exported with icons |
+| LG Home app id | VERIFIED: `com.webos.app.home` |
+| Home button -> LG Home flashes -> V/HOME opens | VERIFIED: 11 of 11 redirects succeeded, 0 failed, in manual tests across Netflix and other apps. Latency from the log: 0.17 s to 5.7 s (mostly under 1 s). This is NOT the full 20-trial protocol (H1) and is not split by app/HDMI |
+| Safety limit (more than 5 redirects in 2 minutes pauses the watcher) | VERIFIED: tripped when Home was pressed 6 times in 5 seconds; `resume` re-armed it |
+| `pause` / `resume` | VERIFIED |
+| Login item (launchd) connects to the TV without a Local Network block | VERIFIED once, after the helper had already connected from a terminal |
+| JioHotstar launcher id | `hotstar` (from `listLaunchPoints`) |
+| Netflix `netflix`, Prime `amazon`, YouTube `youtube.leanback.v4`, HDMI `com.webos.app.hdmi1..3` | ids confirmed present in the TV's own list; launching each from V/HOME not yet checked one by one |
+| Launcher look (colour tiles, full scrolling list, inputs at the bottom) | Owner reviewed the first version on the TV and asked for bigger tiles, app-coloured backgrounds, the full list and HDMI below; reworked, not yet re-checked |
+| Pairing survives in-place upgrade of 0.2.0 (H2) | NOT CHECKED |
+| Launcher usable with Wi-Fi off (H3), timer (H4), Mac sleep/wake (H5), multi-hour run (H6) | NOT RUN |

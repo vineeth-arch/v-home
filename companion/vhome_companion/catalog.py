@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .pngcolor import edge_color
+
 log = logging.getLogger("vhome.catalog")
 
 LIST_URI = "ssap://com.webos.applicationManager/listLaunchPoints"
@@ -29,7 +31,7 @@ ID_RE = re.compile(r"^[a-zA-Z0-9._-]{2,100}$")
 MAX_ENTRIES, MAX_TITLE, MAX_ICON = 200, 60, 256 * 1024
 ICON_BUDGET_S = 120.0
 USER_FACING = {"com.webos.app.browser", "com.webos.app.photovideo", "com.webos.app.music",
-               "com.webos.app.screenshare"}
+               "com.webos.app.screenshare", "com.webos.app.livetv"}
 PNG, JPEG = b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff"
 
 
@@ -139,11 +141,12 @@ def build(points, devices, tv, host, vhome_id, fetch=fetch_icon, now=None):
         got = list(pool.map(get_icon, rows))
     icons, entries = {}, []
     for row, ic in zip(rows, got):
-        name = None
+        name, color = None, None
         if ic:
             name = row[0] + ic[0]
             icons[name] = ic[1]
-        entries.append({"id": row[0], "title": row[1], "kind": row[2], "icon": name,
+            color = edge_color(ic[1]) if ic[0] == ".png" else None
+        entries.append({"id": row[0], "title": row[1], "kind": row[2], "icon": name, "color": color,
                         "source": "companion", "system": row[3]})
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {"schema": 1, "generatedAt": stamp, "tv": tv, "entries": entries}, icons

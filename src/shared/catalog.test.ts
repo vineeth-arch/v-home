@@ -28,12 +28,12 @@ test('duplicate ids: first wins; capped at 200', () => {
 test('null icon (download failed) keeps the entry', () => {
   expect(parseCatalog(file([{ ...good, icon: null }]))!.entries[0].icon).toBeNull()
 })
-test('bundled catalog falls back to curated candidates when tv-catalog is absent', () => {
+test('bundled catalog is the exported tv-catalog when present, else curated candidates', () => {
   const c = bundledCatalog()
   expect(c.entries.length).toBeGreaterThan(0)
-  expect(c.entries.every((e) => e.source === 'curated' && e.icon === null)).toBe(true)
-  expect(c.entries.find((e) => e.id === 'com.webos.app.hdmi1')?.kind).toBe('input')
-  expect(c.entries.find((e) => e.id === 'netflix')?.kind).toBe('app')
+  expect(c.entries.find((e) => e.id === 'com.webos.app.hdmi1')?.kind).toBe('input') // curated and exported both
+  expect(new Set(c.entries.map((e) => e.id)).size).toBe(c.entries.length)
+  if (c.entries.every((e) => e.source === 'curated')) expect(c.entries.every((e) => e.icon === null)).toBe(true)
   expect(bundledCatalog()).toBe(c)
 })
 test('iconUrl is null without a bundled icon', () => {
@@ -51,7 +51,8 @@ test('merge keeps order, marks removed unavailable, appends new, updates survivo
 })
 
 test('system rule matches the companion: helpers and V/HOME hidden, user apps and inputs kept', () => {
-  expect(isSystemApp('com.webos.app.livetv', 'app')).toBe(true)
+  expect(isSystemApp('com.webos.app.discovery', 'app')).toBe(true)
+  expect(isSystemApp('com.webos.app.livetv', 'app')).toBe(false)
   expect(isSystemApp('com.designinnsaeit.vhome', 'app')).toBe(true)
   expect(isSystemApp('com.webos.app.browser', 'app')).toBe(false)
   expect(isSystemApp('com.webos.app.hdmi1', 'input')).toBe(false)

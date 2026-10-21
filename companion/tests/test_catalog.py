@@ -89,7 +89,7 @@ class BuildTests(unittest.TestCase):
         by = {e["id"]: e for e in cat["entries"]}
         self.assertEqual(by["netflix"]["title"], "Netflix")
         self.assertFalse(by["netflix"]["system"])
-        self.assertTrue(by["com.webos.app.livetv"]["system"])
+        self.assertFalse(by["com.webos.app.livetv"]["system"])
         self.assertFalse(by["com.webos.app.browser"]["system"])
         self.assertTrue(by["secret.helper"]["system"])
         self.assertTrue(by[VH]["system"])
@@ -275,3 +275,23 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EdgeColorTests(unittest.TestCase):
+    @staticmethod
+    def png(w, h, px, ctype=6):
+        import struct
+        import zlib
+
+        ch = {2: 3, 6: 4}[ctype]
+        raw = b"".join(b"\x00" + bytes(px) * w for _ in range(h))
+        c = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)  # noqa: E731
+        return b"\x89PNG\r\n\x1a\n" + c(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, ctype, 0, 0, 0)) + c(b"IDAT", zlib.compress(raw)) + c(b"IEND", b"")
+
+    def test_solid_and_transparent_and_garbage(self):
+        from vhome_companion.pngcolor import edge_color
+
+        self.assertEqual(edge_color(self.png(40, 40, (20, 146, 255, 255))), "#1492ff")
+        self.assertEqual(edge_color(self.png(40, 40, (0, 0, 0, 0))), "#ffffff")  # transparent border -> white
+        self.assertIsNone(edge_color(b"not a png"))
+        self.assertIsNone(edge_color(self.png(40, 40, (1, 2, 3, 255))[:60]))  # truncated

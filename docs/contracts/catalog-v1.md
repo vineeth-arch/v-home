@@ -16,6 +16,7 @@ The TV build bundles both with `import.meta.glob` (works on `file://`). Missing 
 | `entries[].title` | string | 1–60 chars after trim |
 | `entries[].kind` | `"app"` \| `"input"` | inputs launch by their appId (e.g. `com.webos.app.hdmi1`) |
 | `entries[].icon` | string \| null | null when download failed; entry is kept |
+| `entries[].color` | string \| null (optional) | `#rrggbb` edge colour of the icon, the tile background; absent/invalid = neutral tint |
 | `entries[].source` | `"companion"` \| `"tv"` \| `"curated"` | |
 | `entries[].system` | boolean | true = internal helper; hidden from grid, shown in Diagnostics |
 
