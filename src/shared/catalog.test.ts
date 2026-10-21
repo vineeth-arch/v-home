@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { bundledCatalog, iconUrl, isSystemApp, mergeEntries, parseCatalog, withRemembered, type CatalogEntry } from './catalog'
+import { bundledCatalog, iconUrl, isSystemApp, tvIconSrc, mergeEntries, parseCatalog, withRemembered, type CatalogEntry } from './catalog'
 
 const good = { id: 'netflix', title: ' Netflix ', kind: 'app', icon: 'netflix.png', source: 'companion', system: false }
 const file = (entries: unknown[]) => ({ schema: 1, generatedAt: 'x', tv: { model: 'm', firmware: 'f' }, entries })
@@ -66,4 +66,11 @@ test('remembered catalog keeps a vanished app only while the layout uses it', ()
   expect(next.map((e) => [e.id, !!e.unavailable])).toEqual([['netflix', false], ['gone', true]])
   localStorage.setItem('vhomeLauncher.catalog.v1', '{bad')
   expect(withRemembered([E('x')], () => true).map((e) => e.id)).toEqual(['x'])
+})
+
+test('icons from the TV itself: plain absolute image paths only', () => {
+  expect(tvIconSrc('/usr/palm/applications/netflix/icon.png')).toBe('file:///usr/palm/applications/netflix/icon.png')
+  expect(tvIconSrc('file:///media/x/largeIcon.jpg')).toBe('file:///media/x/largeIcon.jpg')
+  for (const bad of ['../x.png', '/a/../b.png', 'http://evil/x.png', '/x.svg', '/x.png?y=1', '', 5, null]) expect(tvIconSrc(bad)).toBeUndefined()
+  expect(iconUrl(E('a', { iconSrc: 'file:///x/y.png' }))).toBe('file:///x/y.png')
 })

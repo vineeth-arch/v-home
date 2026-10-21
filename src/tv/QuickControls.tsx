@@ -5,6 +5,7 @@ import { useApp } from './state'
 import { useTimerActions } from './timerActions'
 import { SLEEP_APP } from '../adapters/timer'
 import { appsOf } from '../shared/model'
+import { PICTURE_MODES } from '../adapters/tvcontrols'
 
 export function ConfirmOff({ onClose }: { onClose: () => void }) {
   const { ctrl, refreshTimer } = useApp()
@@ -29,7 +30,7 @@ export function ConfirmOff({ onClose }: { onClose: () => void }) {
 }
 
 export function QuickControls({ onClose }: { onClose: () => void }) {
-  const { snap, guest, setGuest, launch, timerState, tz, setOverlay } = useApp()
+  const { snap, guest, setGuest, launch, timerState, tz, setOverlay, tvControls: tc } = useApp()
   const { msg, run, verified } = useTimerActions()
   const [custom, setCustom] = useState(20)
   const [confirm, setConfirm] = useState(false)
@@ -57,10 +58,20 @@ export function QuickControls({ onClose }: { onClose: () => void }) {
         <Btn id="q-sleepapp" scope="quick" className="ghost" onClick={() => void launch(SLEEP_APP, 'V/TV Sleep')}>Open V/TV Sleep</Btn>
         {pinned.slice(0, 3).map((a) => <Btn key={a.id} id={`q-app-${a.id}`} scope="quick" className="ghost" onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}
         <Btn id="q-ambient" scope="quick" className="ghost" onClick={() => setOverlay('ambient')}>Photo frame</Btn>
+        <Btn id="q-help" scope="quick" className="ghost" onClick={() => setOverlay('help')}>Help</Btn>
         <Btn id="q-guest" scope="quick" className={guest ? 'on' : 'ghost'} onClick={() => { setGuest(!guest); onClose() }}>{guest ? 'End guest view' : 'Guest view'}</Btn>
         <Btn id="q-off" scope="quick" className="ghost" onClick={() => setConfirm(true)}>TV off now</Btn>
       </div>
-      <div className="dim small" data-tz={tz}>Volume and picture controls appear only once verified on this TV (see Settings).</div>
+      {tc.volume.cap === 'supported' && <div className="stepper">
+        <Btn id="q-vdown" scope="quick" className="chip" onClick={tc.volumeDown}>Vol −</Btn>
+        <b>{tc.volume.volume ?? '–'}{tc.volume.muted ? ' · muted' : ''}</b>
+        <Btn id="q-vup" scope="quick" className="chip" onClick={tc.volumeUp}>Vol +</Btn>
+        <Btn id="q-mute" scope="quick" className={tc.volume.muted ? 'on' : 'ghost'} onClick={tc.toggleMute}>{tc.volume.muted ? 'Unmute' : 'Mute'}</Btn>
+      </div>}
+      {tc.picture.cap === 'supported' && <div className="presets">
+        {PICTURE_MODES.map((m) => <Btn key={m} id={`q-pic-${m}`} scope="quick" className={tc.picture.mode === m ? 'on' : 'ghost'} onClick={() => tc.setPicture(m)}>{m[0].toUpperCase() + m.slice(1)}</Btn>)}
+      </div>}
+      <div className="dim small" data-tz={tz}>{tc.volume.cap === 'supported' || tc.picture.cap === 'supported' ? 'Picture mode and volume apply to the TV right now.' : 'Volume and picture appear here only if this TV allows V/HOME to control them (see Settings, Diagnostics).'}</div>
       {confirm && <ConfirmOff onClose={() => setConfirm(false)} />}
     </div></div>
   )

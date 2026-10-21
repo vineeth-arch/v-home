@@ -48,12 +48,17 @@ export class LunaTimer implements TimerAdapter {
 export const VHOME_APP = 'com.designinnsaeit.vhome'
 
 /** What V/TV Sleep tells V/HOME after it handled a request (launch params `{timer: ...}`). It comes from the timer authority itself. */
-export interface TimerReport { op: 'schedule' | 'cancel' | 'error'; minutes?: number; shutdownAt?: number; error?: string; at: number }
+export interface TimerReport { op: 'schedule' | 'cancel' | 'status' | 'error'; scheduled?: boolean; minutes?: number; shutdownAt?: number; error?: string; at: number }
 export function parseReport(raw: unknown): TimerReport | null {
   const t = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
   if (!t || typeof t.at !== 'number') return null
   if (t.op === 'cancel') return { op: 'cancel', at: t.at }
   if (t.op === 'error') return { op: 'error', error: typeof t.error === 'string' ? t.error.slice(0, 120) : 'error', at: t.at }
+  if (t.op === 'status') {
+    if (t.scheduled === true && typeof t.shutdownAt === 'number' && typeof t.minutes === 'number') return { op: 'status', scheduled: true, minutes: t.minutes, shutdownAt: t.shutdownAt, at: t.at }
+    if (t.scheduled === false) return { op: 'status', scheduled: false, at: t.at }
+    return null
+  }
   if (t.op === 'schedule' && typeof t.shutdownAt === 'number' && typeof t.minutes === 'number') return { op: 'schedule', minutes: t.minutes, shutdownAt: t.shutdownAt, at: t.at }
   return null
 }
@@ -71,6 +76,7 @@ export class HandoffTimer implements TimerAdapter {
     return r.ok ? { kind: 'handoff' } : { kind: 'failed', error: r.error }
   }
   async status() { return { kind: 'unavailable' as const } }
+  status2() { return this.go({ mode: 'status', returnTo: VHOME_APP }) }
   schedule(minutes: number) { return validMinutes(minutes) ? this.go({ mode: 'schedule', minutes, returnTo: VHOME_APP }) : Promise.resolve<TimerResult>({ kind: 'failed', error: 'minutes must be 1-720' }) }
   cancel() { return this.go({ mode: 'cancel', returnTo: VHOME_APP }) }
   powerOff() { return this.go({ mode: 'off' }) }
@@ -110,10 +116,16 @@ export class FallbackTimer implements TimerAdapter {
   /** Direct status is denied too, so the last confirmation V/TV Sleep sent back is all we know (it can be stale if the timer is changed elsewhere). */
   private fromReport() {
     const r = this.report
-    if (r?.op === 'schedule' && r.shutdownAt! > this.now()) return { kind: 'confirmed' as const, state: { scheduled: true as const, shutdownAt: r.shutdownAt!, minutes: r.minutes! } }
-    if (r?.op === 'cancel') return { kind: 'confirmed' as const, state: { scheduled: false as const } }
+    if ((r?.op === 'schedule' || (r?.op === 'status' && r.scheduled)) && r.shutdownAt! > this.now()) return { kind: 'confirmed' as const, state: { scheduled: true as const, shutdownAt: r.shutdownAt!, minutes: r.minutes! } }
+    if (r?.op === 'cancel' || (r?.op === 'status' && r.scheduled === false)) return { kind: 'confirmed' as const, state: { scheduled: false as const } }
     return { kind: 'unavailable' as const }
   }
+  /** When V/TV Sleep last told us the timer state (epoch ms), or null. */
+  get reportAt() { return this.report?.at ?? null }
+  /** Believes a timer is running (from the last report). */
+  get believesRunning() { const r = this.report; return !!r && (r.op === 'schedule' || (r.op === 'status' && r.scheduled === true)) && r.shutdownAt! > this.now() }
+  /** Ask V/TV Sleep for the true state. It shows a short confirmation, reopens V/HOME and reports back. */
+  check() { return this.handoff.status2() }
   async status() {
     if (this.denied) return this.fromReport()
     const r = await this.direct.status()

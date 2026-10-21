@@ -55,25 +55,35 @@ From top to bottom:
 
 Each tile uses the colour of the app's own icon as its background, so tiles look like the apps. Apps that disappear from the TV stay in your layout greyed out as "Not on this TV" instead of silently vanishing.
 
-The list of apps comes from the TV itself. Apps you install later appear after you refresh the list: [Refresh the app list](#refresh-the-app-list).
+The list of apps comes from the TV itself. When you install a new app, V/HOME finds it on the TV and adds it to More apps (with its own icon, if the TV allows V/HOME to list apps; see Settings, Diagnostics). For the matching tile colour and an icon bundled into V/HOME, refresh the list: [Refresh the app list](#refresh-the-app-list).
 
 ### Refresh the app list
 
-On the Mac, in the V/HOME folder:
+On the Mac, in the V/HOME folder, one command:
 
 ```bash
-PYTHONPATH=companion "$HOME/Library/Application Support/vhome-companion/venv/bin/python" -m vhome_companion sync-catalog
-./scripts/build-tv.sh && ./scripts/install-tv.sh
+./scripts/refresh-tv.sh
 ```
 
-This reads the installed apps and inputs from the TV, downloads their icons, works out each tile colour, and installs an updated V/HOME. Your layout and pairing are kept.
+It reads the installed apps and inputs from the TV, downloads their icons, works out each tile colour, rebuilds V/HOME, installs it and opens it. Your layout and pairing are kept.
+
+**Automatic:** the Mac helper checks the TV's app list every 30 minutes. When apps were installed or removed it sends you a Mac notification and shows the change in `status`. To let it refresh by itself:
+
+```bash
+PY="$HOME/Library/Application Support/vhome-companion/venv/bin/python"
+"$PY" -m vhome_companion autorefresh on     # off to stop
+```
+
+With auto refresh on, it runs `scripts/refresh-tv.sh` only when the app list changed, only while V/HOME itself is on screen (it never interrupts another app), and at most once an hour. V/HOME restarts for a few seconds when it does.
 
 ## Editing your layout and folders
 
 Open **Edit** (small button beside the Favorites heading), or Settings, Home screen, Edit layout.
 
-1. Pick an app from the list. Buttons appear: **Move earlier**, **Move later**, **Add favorite** or **Remove favorite**, **Hide** or **Unhide**, and **Into folder** or **Out of folder**.
-2. **New folder** makes a folder with the next free name from a preset list (Streaming, Music, Kids, Games, Sports, Other). **Rename** cycles through those names. **Delete** removes the folder and returns its apps to the grid.
+**Quick way:** on the Home screen, hold OK on any app (about a second). The editor opens with that app already selected.
+
+1. Pick an app from the list. Buttons appear: **Move earlier**, **Move later** (its place in the app list), **Favorite earlier**, **Favorite later** (its place among your favorites, shown for favorites only), **Add favorite** or **Remove favorite**, **Hide** or **Unhide**, and **Into folder** or **Out of folder**.
+2. **New folder** and **Rename** open an on-screen keyboard: arrows move over the letters, OK types, **Space**, **Delete**, **Clear**, **Done**. The first letter of each word is capitalised for you. Leaving the name empty gives a default name (Streaming, Music, Kids, and so on). **Delete** removes the folder and returns its apps to the grid.
 3. **Save** keeps your changes. **Cancel** or Back throws them away.
 
 Favorites hold up to 10. Your layout lives on this TV only; the phone does not change it. On first run, favorites are copied once from the apps pinned on the phone.
@@ -89,8 +99,9 @@ The right side of the Home screen has one-click timers: **15, 30, 45, 60 and 90 
 How it works: V/TV Sleep is the only thing that actually turns the TV off. When you press a timer button, V/HOME asks V/TV Sleep to start it. V/TV Sleep flashes its own confirmation ("TV OFF IN 30 MIN") for about a second, then returns you to V/HOME with the confirmed time. The status line shows what V/TV Sleep confirmed.
 
 - The same timers are in Quick controls.
-- If the status says "Timer status unavailable", the last request has not been confirmed yet. Press the button again.
-- If you change the timer in the V/TV Sleep app or from an iPhone, V/HOME only learns about it the next time V/TV Sleep returns to V/HOME, so the line can be out of date until then.
+- Under the buttons it says when V/TV Sleep last confirmed the timer. **Check timer** asks V/TV Sleep for the true state (it flashes "TV OFF AT …" or "NO TIMER SET" and returns). Use it if you changed the timer in the V/TV Sleep app or from an iPhone.
+- V/HOME also checks by itself when you come back to it and it believes a timer is running but the last confirmation is more than 10 minutes old.
+- If the status says "Timer status unavailable", the last request has not been confirmed yet. Press a timer button again or **Check timer**.
 - Not yet checked on the TV: that the TV actually switches off at the set time.
 
 ## Home button on the TV (Mac helper)
@@ -160,7 +171,9 @@ After a few idle minutes on Our Home (the delay is set on the phone, 0 means nev
 Quick controls (header chip) holds:
 
 - Timer presets 15, 30, 45, 60 and 90 minutes, a custom time in 5-minute steps, **Cancel timer**.
+- **Volume** (Vol −, Vol +, Mute) and **Picture mode** (Standard, Cinema, Vivid, Game, Eco). These appear only if a safe test shows this TV lets V/HOME use them. Settings, Diagnostics says which.
 - **Open V/TV Sleep.**
+- **Help.**
 - Your first apps.
 - **Photo frame.**
 - **Guest view:** hides plans, notes, dreams and photos until you end it.
@@ -173,6 +186,7 @@ Quick controls (header chip) holds:
 - Household, timezone, timer path and last sync.
 - **Unpair this TV** (asks first).
 - **Home screen:** wallpaper, reduced motion, Edit layout, hidden apps count.
+- **Help:** this guide in short form, readable with the remote.
 - **Diagnostics:** how many apps came from where, when the catalog was made, hidden system apps, and what the TV allows (listing apps, timer, Home button). A launch the TV accepts does not prove the app opened.
 - If the TV is not paired, Settings shows the pairing code.
 
@@ -212,9 +226,9 @@ To remove a TV: phone, Displays, or TV Settings, Unpair this TV. A removed TV ke
 |---|---|
 | Pressing Home does not open V/HOME | Run `status` (see above). Paused? run `resume`. Mac asleep or on another network? The helper only works when the Mac is on and on the TV's network. |
 | LG Home stays on screen | The helper may be paused by its safety limit (pressing Home many times quickly). Run `resume`. |
-| App tiles show letters, not icons | Refresh the app list (see above). |
+| App tiles show letters, not icons | Run `./scripts/refresh-tv.sh` (see above). |
 | An app is greyed "Not on this TV" | It was uninstalled or its id changed. Hide it or remove it in Edit. |
-| Timer shows "unavailable" | Press a timer button once; V/TV Sleep confirms when it returns. Make sure V/TV Sleep 0.1.1 or newer is installed. |
+| Timer shows "unavailable" or looks wrong | Press **Check timer**. Make sure V/TV Sleep 0.1.2 or newer is installed. |
 | TV shows "Pair this TV" on a household screen | Pair it ([above](#pairing-the-tv-with-the-phone)). The launcher still works unpaired. |
 | The TV changed its IP address | Run `"$PY" -m vhome_companion pair --host NEW_IP` and update the saved device: `node_modules/.bin/ares-setup-device --modify tv -i "host=NEW_IP"`. Better: give the TV a fixed address in your router. |
 | V/HOME and V/TV Sleep vanished | Developer Mode expired. See [DEV-MODE.md](DEV-MODE.md) and [RECOVERY.md](RECOVERY.md). Extend it in the Developer Mode app before it reaches 0 h. |
@@ -224,16 +238,19 @@ More: [RECOVERY.md](RECOVERY.md), [DEV-MODE.md](DEV-MODE.md), [LIMITATIONS.md](L
 ## All features at a glance
 
 Launcher
+- Hold OK on an app to edit it; type your own folder names with an on-screen keyboard; reorder favorites
+- Built-in Help screen (Settings or Quick controls)
 - Opens without pairing, internet or the Mac helper
 - Colour-matched icon tiles, full scrolling app list, inputs at the bottom
 - Up to 10 favorites, folders with previews, hide, reorder, greyed missing apps
 - Five wallpapers, reduced motion, remembers where you were when you return from an app
-- Real app list and icons taken from your own TV
+- Real app list and icons taken from your own TV; new apps are found automatically, with an optional one-command (or fully automatic) refresh
 - Back asks before leaving
 
 Timer
 - One-click 15, 30, 45, 60, 90 minute sleep timers and Cancel, always on screen
 - Confirmed by V/TV Sleep, the only thing that turns the TV off
+- Check timer asks V/TV Sleep for the true state, so changes made elsewhere show up
 
 Home button
 - Mac helper returns Home to V/HOME, with pause, resume and automatic safety limits
@@ -260,7 +277,7 @@ Privacy
 - LG's Home screen cannot be replaced, only redirected. It flashes briefly and the redirect needs the Mac running.
 - V/HOME cannot open automatically when the TV powers on (see [OPENING.md](OPENING.md)).
 - It cannot appear on top of another app; Quick controls exist inside V/HOME only.
-- Volume, sound output and picture presets are not offered until they are verified on this TV.
+- Volume and picture buttons appear only if this TV allows V/HOME to use them. Sound output selection is not offered.
 - Developer Mode expires; extend it regularly.
 - Streaming availability may be out of date.
 - Apple TV, Netflix and other apps show their own ads inside those apps. V/HOME itself has none.

@@ -15,6 +15,7 @@ export const useFocusCtx = () => useContext(FocusCtx)!
 export const EXIT_EVENT = 'vhome:exit-root'
 export const requestExit = () => window.dispatchEvent(new Event(EXIT_EVENT))
 
+export const LONG_PRESS_MS = 650
 const scrollerOf = (el: HTMLElement): HTMLElement | null => {
   for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
     const oy = getComputedStyle(p).overflowY
@@ -39,6 +40,7 @@ export function FocusProvider({ children, onExitRoot = requestExit }: { children
   const [focusedId, setFocused] = useState<string | null>(null)
   const focusedRef = useRef<string | null>(null)
   const hiddenFocus = useRef<string | null>(null)
+  const ok = useRef<{ el: HTMLElement; timer: ReturnType<typeof setTimeout>; long: boolean } | null>(null) // OK held on a data-longpress element
 
   const focus = useCallback((id: string) => {
     focusedRef.current = id; setFocused(id)
@@ -77,19 +79,33 @@ export function FocusProvider({ children, onExitRoot = requestExit }: { children
     const onKey = (e: KeyboardEvent) => {
       const dir = dirForKey(e.keyCode)
       if (dir) { const n = pickNext(boxes(true), focusedRef.current, dir) ?? pickNext(boxes(), focusedRef.current, dir); if (n) focus(n); e.preventDefault(); return }
-      if (e.keyCode === 13) { els.current.get(focusedRef.current ?? '')?.el.click(); return }
+      if (e.keyCode === 13) {
+        const el = els.current.get(focusedRef.current ?? '')?.el
+        if (!el) return
+        if (!el.dataset.longpress) { el.click(); return }
+        // long-press capable: a tap clicks on key-up; holding OK fires 'longpress' instead
+        if (ok.current) return // key repeat
+        const st = { el, long: false, timer: setTimeout(() => { st.long = true; el.dispatchEvent(new CustomEvent('longpress')) }, LONG_PRESS_MS) }
+        ok.current = st
+        return
+      }
       if (KEY_BACK.includes(e.keyCode)) {
         e.preventDefault()
         if (stack.current.back() === 'exit') onExitRoot()
       }
     }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.keyCode !== 13 || !ok.current) return
+      const st = ok.current; ok.current = null; clearTimeout(st.timer)
+      if (!st.long && st.el.isConnected) st.el.click()
+    }
     const onVis = () => { // preserve focus when returning from another app
       if (document.hidden) hiddenFocus.current = focusedRef.current
       else if (hiddenFocus.current && els.current.has(hiddenFocus.current)) focus(hiddenFocus.current)
     }
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey); window.addEventListener('keyup', onKeyUp)
     document.addEventListener('visibilitychange', onVis)
-    return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('visibilitychange', onVis) }
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKeyUp); document.removeEventListener('visibilitychange', onVis) }
   }, [focus, onExitRoot])
 
   const value = useMemo(() => ({ focusedId, register, focus, pushLayer }), [focusedId, register, focus, pushLayer])

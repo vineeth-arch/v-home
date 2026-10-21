@@ -10,8 +10,8 @@ An ad-free launcher and shared household dashboard for an LG webOS TV, with a ph
 
 ## What it does
 
-- **Launcher:** colour-matched app tiles, up to 10 favorites, folders, a full scrolling app list, HDMI inputs at the bottom, five wallpapers. Opens without pairing, internet or the Mac helper. App list and icons come from your own TV.
-- **One-click sleep timer** (15, 30, 45, 60, 90 min, Cancel) on the right of the Home screen. V/TV Sleep stays the only thing that turns the TV off; it confirms each request and returns you to V/HOME.
+- **Launcher:** colour-matched app tiles, up to 10 favorites you can reorder, folders you name with an on-screen keyboard, hold OK on an app to edit it, a full scrolling app list, HDMI inputs at the bottom, five wallpapers, a built-in Help screen. Opens without pairing, internet or the Mac helper. App list and icons come from your own TV.
+- **One-click sleep timer** (15, 30, 45, 60, 90 min, Cancel) on the right of the Home screen. V/TV Sleep stays the only thing that turns the TV off; it confirms each request and returns you to V/HOME, and Check timer asks it for the true state.
 - **Home button:** a Mac helper watches the foreground app and reopens V/HOME when LG Home appears. Pause and resume any time, with automatic safety limits.
 - **Household:** Our Home (morning and evening rituals, reflections, plans, notes), Watch Together, Us, Idea Wall, photo frame, guest view, weather, and Studio business numbers in work hours.
 - **Phone app:** plans, tasks, dreams, notes, photos, ideas, weekly check-in, reflections, watch list with TMDB search, pairing, backup.
@@ -26,14 +26,15 @@ npm install
 ./scripts/build-tv.sh && ./scripts/install-tv.sh
 ```
 
-For the Home button and real app icons, set up the Mac helper: [docs/COMPANION.md](docs/COMPANION.md). The sleep timer needs V/TV Sleep 0.1.1 or newer from the [LGTV repo](https://github.com/vineeth-arch/lgtv) installed on the same TV.
+For the Home button and real app icons, set up the Mac helper: [docs/COMPANION.md](docs/COMPANION.md). The sleep timer needs V/TV Sleep 0.1.2 or newer from the [LGTV repo](https://github.com/vineeth-arch/lgtv) installed on the same TV.
 
-Refresh the app list after installing or removing TV apps:
+Refresh the app list after installing or removing TV apps (icons and tile colours come from your own TV):
 
 ```bash
-PYTHONPATH=companion "$HOME/Library/Application Support/vhome-companion/venv/bin/python" -m vhome_companion sync-catalog
-./scripts/build-tv.sh && ./scripts/install-tv.sh
+./scripts/refresh-tv.sh
 ```
+
+The Mac helper also notices app changes by itself and can run this for you (`python -m vhome_companion autorefresh on`).
 
 ## Develop
 
@@ -43,6 +44,7 @@ PYTHONPATH=companion "$HOME/Library/Application Support/vhome-companion/venv/bin
 | `npm run dev:tv` | TV app in the browser (add `?sim` for sample data) |
 | `npm run check` | typecheck, tests, both builds |
 | `python3 -m unittest discover companion/tests` | Mac helper tests |
+| `./scripts/refresh-tv.sh` | export TV apps and icons, rebuild, install |
 
 Stack: React 19, Vite, TypeScript, plain CSS (the brief overrides the global Next.js default). The TV build is a single script that works from `file://`. Mac helper: Python 3.11+, one dependency (`websockets`).
 

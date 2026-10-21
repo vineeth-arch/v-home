@@ -76,3 +76,21 @@ test('after a denied direct call, status comes only from what V/TV Sleep reporte
   expect(parseReport({ op: 'schedule', at: 1 })).toBeNull()
   expect(parseReport('x')).toBeNull()
 })
+
+test('a status report from V/TV Sleep corrects the timer view; check() asks V/TV Sleep with returnTo', async () => {
+  localStorage.clear()
+  const launches: unknown[] = []
+  const p: Platform = { simulated: true, call: async () => ({ ok: false, error: 'denied method status for category "/"' }), launchApp: async (id, params) => { launches.push([id, params]); return { ok: true, data: {} } }, subscribe: () => () => {} }
+  let now = 1000
+  const t = new FallbackTimer(p, () => now)
+  t.ingest(parseReport({ op: 'schedule', minutes: 60, shutdownAt: 3_600_000, at: 100 }))
+  expect(t.believesRunning).toBe(true)
+  await t.check()
+  expect(launches).toEqual([['com.designinnsaeit.vtvsleep', { mode: 'status', returnTo: 'com.designinnsaeit.vhome' }]])
+  t.ingest(parseReport({ op: 'status', scheduled: false, at: 200 })) // it was cancelled elsewhere
+  expect(t.believesRunning).toBe(false)
+  expect(await t.status()).toEqual({ kind: 'confirmed', state: { scheduled: false } })
+  t.ingest(parseReport({ op: 'status', scheduled: true, minutes: 30, shutdownAt: 1_900_000, at: 300 }))
+  expect(await t.status()).toEqual({ kind: 'confirmed', state: { scheduled: true, shutdownAt: 1_900_000, minutes: 30 } })
+  expect(parseReport({ op: 'status', at: 1 })).toBeNull()
+})

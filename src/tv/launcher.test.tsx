@@ -9,7 +9,7 @@ import type { CatalogEntry } from '../shared/catalog'
 const e = (id: string, title: string, kind: 'app' | 'input' = 'app', extra: Partial<CatalogEntry> = {}): CatalogEntry => ({ id, title, kind, icon: null, source: 'curated', system: false, ...extra })
 const CATALOG = [e('netflix', 'Netflix'), e('youtube', 'YouTube'), e('spotify', 'Spotify'), e('prime', 'Prime Video'), e('hdmi1', 'HDMI 1', 'input'), e('helper', 'Helper', 'app', { system: true })]
 
-const app = { catalog: CATALOG, launcherPrefs: DEFAULT_LAUNCHER_PREFS as LauncherPrefs, setLauncherPrefs: vi.fn(), launch: vi.fn(), snap: emptySnapshot(), guest: false, now: new Date('2026-10-21T08:00:00Z'), tz: 'Asia/Kolkata', mode: 'home', live: null, capabilities: {}, timerState: { scheduled: false } as const, ctrl: { verified: false, mutate: vi.fn(), label: 'test' }, refreshTimer: vi.fn() }
+const app = { catalog: CATALOG, launcherPrefs: DEFAULT_LAUNCHER_PREFS as LauncherPrefs, setLauncherPrefs: vi.fn(), launch: vi.fn(), snap: emptySnapshot(), guest: false, now: new Date('2026-10-21T08:00:00Z'), tz: 'Asia/Kolkata', mode: 'home', live: null, capabilities: {}, timerState: { scheduled: false } as const, ctrl: { verified: false, mutate: vi.fn(), label: 'test' }, refreshTimer: vi.fn(), timerAt: null, tvControls: { volume: { cap: 'unverified', volume: null, muted: null }, picture: { cap: 'unverified', mode: null } }, canCheckTimer: false, checkTimer: vi.fn() }
 vi.mock('./state', () => ({ useApp: () => app }))
 
 import { FocusProvider } from './FocusProvider'
@@ -30,6 +30,15 @@ beforeEach(() => { host = document.createElement('div'); document.body.append(ho
 afterEach(() => { act(() => root.unmount()); host.remove() })
 
 describe('Launcher', () => {
+  it('typing a folder name with the on-screen keyboard', () => {
+    mount(<Launcher />)
+    click('Edit'); click('New folder')
+    for (const c of ['K', 'I', 'D', 'S']) click(c)
+    click('Space'); click('A')
+    expect(host.querySelector('.l-kbd-text')?.textContent).toBe('Kids A') // auto capital after a space
+    click('Done')
+    expect(host.textContent).toContain('Kids A (0)')
+  })
   it('shows the sleep-timer shortcuts on the right', () => {
     mount(<Launcher />)
     const labels = [...host.querySelectorAll('.l-timer button')].map((b) => b.textContent)
@@ -54,7 +63,7 @@ describe('layout editor', () => {
   it('Cancel discards the draft: setLauncherPrefs is not called', () => {
     mount(<Launcher />)
     click('Edit')
-    click('New folder')
+    click('New folder'); click('Done') // the keyboard opens; Done with no typing keeps the default name
     expect(host.textContent).toContain('Streaming (0)')
     click('Cancel')
     expect(host.querySelector('.l-edit')).toBeNull()
@@ -62,7 +71,7 @@ describe('layout editor', () => {
   })
   it('Save writes the draft', () => {
     mount(<Launcher />)
-    click('Edit'); click('New folder'); click('Save')
+    click('Edit'); click('New folder'); click('Done'); click('Save')
     expect(app.setLauncherPrefs).toHaveBeenCalledTimes(1)
     expect(app.setLauncherPrefs.mock.calls[0][0].folders).toHaveLength(1)
   })
