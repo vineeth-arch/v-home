@@ -13,8 +13,8 @@ android {
         applicationId = "com.designinnsaeit.vhome.watch"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0"
         // Debug log receiver on the build machine (android/tools/logsink.py); set logSink=ip:port in local.properties.
         val localProps = Properties().apply {
             rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }

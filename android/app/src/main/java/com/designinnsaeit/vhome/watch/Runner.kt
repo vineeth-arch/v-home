@@ -11,6 +11,9 @@ import java.util.Locale
 private val POWER_OFF = setOf("Active Standby", "Suspend", "Power Off")
 private val WAKE_CHECK_GAPS_MS = listOf(0L, 3_000L, 7_000L) // checks at 0 s, 3 s, 10 s after wake
 
+private const val CLOSE_URI = "ssap://system.launcher/close"
+private const val STUCK_CHECK_MS = 3_000L
+
 class WakeCheckFailed(msg: String) : Exception(msg)
 
 /** Glue between the TV session and the pure Watcher. All decisions live in the Watcher. */
@@ -151,6 +154,7 @@ class Runner(
             try {
                 session.request(LAUNCH_URI, JSONObject().put("id", a.appId), 10_000)
                 apply(locked { watcher.onLaunchResult(a.token, true, clock()) })
+                restartIfStuck(a)
                 return
             } catch (e: CancellationException) {
                 throw e
@@ -161,6 +165,26 @@ class Runner(
             delay(retryDelayMs)
         }
         apply(locked { watcher.onLaunchResult(a.token, false, clock(), err) })
+    }
+
+    /**
+     * Seen on the real TV: a V/HOME instance stuck in the background makes `launch` return success while
+     * nothing comes to the front (the Mac watcher hit it too). Closing it first, then launching, brings it
+     * up in ~3 s. One attempt, finished inside the watcher's 10 s confirm window.
+     */
+    private suspend fun restartIfStuck(a: Action.Launch) {
+        delay(STUCK_CHECK_MS)
+        if (!locked { watcher.snapshot().pending }) return // V/HOME came to the front: done
+        log("V/HOME accepted the launch but did not appear; restarting it")
+        try {
+            runCatching { session.request(CLOSE_URI, JSONObject().put("id", a.appId), 3_000) }
+            delay(1_000)
+            session.request(LAUNCH_URI, JSONObject().put("id", a.appId), 4_000)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log("restart of V/HOME failed: ${e.message ?: e.javaClass.simpleName}")
+        }
     }
 }
 

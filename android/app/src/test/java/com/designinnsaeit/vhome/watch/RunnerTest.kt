@@ -26,6 +26,7 @@ private class FakeSession(val scope: TestScope) : TvSession {
     val power = MutableSharedFlow<JSONObject>(extraBufferCapacity = 64)
     var powerFails = false
     val launchTimes = mutableListOf<Long>()
+    val closeTimes = mutableListOf<Long>()
     val launchScript = ArrayDeque<Boolean>() // true = ok, false = throw; empty = ok
     var alwaysFail = false
 
@@ -40,6 +41,10 @@ private class FakeSession(val scope: TestScope) : TvSession {
             fgQueries++
             if (fgQueryFails) throw RuntimeException("no answer")
             return fgOf(fgAnswers.removeFirstOrNull() ?: VH)
+        }
+        if (uri == "ssap://system.launcher/close") {
+            closeTimes += scope.currentTime
+            return JSONObject()
         }
         check(uri == LAUNCH_URI)
         launchTimes += scope.currentTime
@@ -198,6 +203,28 @@ class RunnerTest {
         runCurrent()
         s.power.tryEmit(powerOf("Active")); runCurrent()
         assertTrue(failure is WakeCheckFailed)
+    }
+
+    @Test fun stuckVhomeIsRestarted() = runTest {
+        val r = Rig(this); r.start()
+        r.fg(HOME) // launch "succeeds" but V/HOME never shows
+        assertEquals(1, r.session.launchTimes.size)
+        advanceTimeBy(3_001); runCurrent()
+        assertEquals(1, r.session.closeTimes.size)
+        advanceTimeBy(1_001); runCurrent()
+        assertEquals(2, r.session.launchTimes.size)
+        r.fg(VH) // the fresh instance comes to the front
+        assertEquals(1, r.watcher.snapshot().ok)
+        assertEquals(0, r.watcher.snapshot().failed)
+    }
+
+    @Test fun noRestartWhenVhomeAppears() = runTest {
+        val r = Rig(this); r.start()
+        r.fg(HOME)
+        r.fg(VH)
+        advanceTimeBy(5_000)
+        assertTrue(r.session.closeTimes.isEmpty())
+        assertEquals(1, r.session.launchTimes.size)
     }
 
     @Test fun backoffStartsAt5() {
