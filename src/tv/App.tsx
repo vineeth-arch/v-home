@@ -5,8 +5,9 @@ import { QuickControls } from './QuickControls'
 import { MorningRitual, BedtimeRitual } from './rituals'
 import { Ambient } from './Ambient'
 import { Studio } from './Studio'
+import { Launcher } from './Launcher'
 
-const TITLES: Record<Exclude<Screen, 'home'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', apps: 'Apps', settings: 'Settings', studio: 'Studio' }
+const TITLES: Record<Exclude<Screen, 'home' | 'launcher'>, string> = { watch: 'Watch Together', us: 'Us', ideas: 'Idea Wall', apps: 'Apps', settings: 'Settings', studio: 'Studio' }
 
 export function App() {
   const { screen, go, overlay, setOverlay, live, toast } = useApp()
@@ -15,8 +16,9 @@ export function App() {
   if (live && live.status !== 'ready') return <PairingGate />
   return (
     <div className="app">
-      <Header title={screen === 'home' ? undefined : TITLES[screen]} />
+      <Header title={screen === 'home' || screen === 'launcher' ? undefined : TITLES[screen]} />
       <div key={screen} className="screen-in">
+        {screen === 'launcher' && <Launcher />}
         {screen === 'home' && <OurHome />}
         {screen === 'watch' && <Watch />}
         {screen === 'us' && <Us />}

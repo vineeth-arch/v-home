@@ -11,3 +11,7 @@
 - Copy: manifestation is personal intention and visualisation, never guaranteed outcomes. Reflections are labelled "Original reflection", no invented authors.
 - No scoring, streaks, rankings, or completion pressure.
 - Fonts self-hosted in public/fonts (no CDN): Newsreader (serif, headings/quotes) and Atkinson Hyperlegible (body). @font-face lives inline in each HTML file with document-relative URLs (works for the phone and for file:// in the IPK). Phone UI is mobile-first at 390px.
+
+## Launcher (Home screen only; user decision 2026-10-21)
+- The launcher screen (`.launcher`, tokens in `src/tv/launcher.css`) may use a dark neutral palette and a subtle, static gradient wallpaper (preset list). This overrides "warm charcoal" and "no gradients" for that screen only. Household screens (Our Home, Watch, Us, Ideas, rituals) keep the warm tokens above.
+- No animated wallpaper, no backdrop blur, no particle effects, no network images required. Six-column grid, six dock slots, focus scale ~1.05 + outline + shadow, 150–200 ms transform/opacity; reduced-motion respected.

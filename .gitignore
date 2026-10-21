@@ -9,3 +9,8 @@ supabase/.temp
 
 !.env.example
 .vercel
+
+# launcher 2.0
+tv-catalog/
+companion/.venv/
+__pycache__/

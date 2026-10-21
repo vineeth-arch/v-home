@@ -9,9 +9,11 @@ import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
 import { resolvePrefs } from '../shared/prefs'
 import { studioVisible } from '../../supabase/functions/_shared/studio'
+import { bundledCatalog, type CatalogEntry, type Capability } from '../shared/catalog'
+import { loadPrefs, savePrefs, type LauncherPrefs } from '../shared/launcherPrefs'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
-export type Screen = 'home' | 'watch' | 'us' | 'ideas' | 'apps' | 'settings' | 'studio'
+export type Screen = 'launcher' | 'home' | 'watch' | 'us' | 'ideas' | 'apps' | 'settings' | 'studio'
 export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing' | 'ambient'
 
 export interface AppState {
@@ -26,6 +28,9 @@ export interface AppState {
   launch(id: string, label: string): Promise<void>
   toast: string | null
   images: Record<string, string>
+  catalog: CatalogEntry[]
+  launcherPrefs: LauncherPrefs; setLauncherPrefs(p: LauncherPrefs): void
+  capabilities: Record<string, Capability>
 }
 const Ctx = createContext<AppState | null>(null)
 export const useApp = () => useContext(Ctx)!
@@ -132,9 +137,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isLive) { if (!snap.tasks.find((t) => t.id === id)?.done) void live.completeTask(id); return }
     setSnap((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }))
   }, [isLive, live, snap.tasks])
+  const catalog = useMemo(() => bundledCatalog().entries, [])
+  const [launcherPrefs, setPrefsState] = useState<LauncherPrefs>(loadPrefs)
+  const setLauncherPrefs = useCallback((p: LauncherPrefs) => { setPrefsState(p); savePrefs(p) }, [])
+  const capabilities: Record<string, Capability> = {}
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, studioOn, overlay, setOverlay,
     platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast, images: isLive ? live.images : {},
+    catalog, launcherPrefs, setLauncherPrefs, capabilities,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
