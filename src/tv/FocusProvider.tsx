@@ -11,7 +11,11 @@ interface Ctx {
 const FocusCtx = createContext<Ctx | null>(null)
 export const useFocusCtx = () => useContext(FocusCtx)!
 
-export function FocusProvider({ children, onExitRoot = () => window.close() }: { children: ReactNode; onExitRoot?: () => void }) {
+/** Back at the root asks the app to show its exit dialog (AppProvider listens). */
+export const EXIT_EVENT = 'vhome:exit-root'
+export const requestExit = () => window.dispatchEvent(new Event(EXIT_EVENT))
+
+export function FocusProvider({ children, onExitRoot = requestExit }: { children: ReactNode; onExitRoot?: () => void }) {
   const els = useRef(new Map<string, Entry>())
   const stack = useRef(new BackStack())
   const [focusedId, setFocused] = useState<string | null>(null)
@@ -20,7 +24,10 @@ export function FocusProvider({ children, onExitRoot = () => window.close() }: {
 
   const focus = useCallback((id: string) => {
     focusedRef.current = id; setFocused(id)
-    els.current.get(id)?.el.focus({ preventScroll: true })
+    const el = els.current.get(id)?.el
+    if (!el) return
+    el.focus({ preventScroll: true })
+    if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [])
 
   const register = useCallback((id: string, el: HTMLElement, scope: string, initial: boolean) => {

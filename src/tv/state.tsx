@@ -1,20 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { fixtureSnapshot, fixtureWeather } from '../shared/fixtures'
-import { emptySnapshot, type Snapshot } from '../shared/model'
+import { appsOf, emptySnapshot, type Snapshot } from '../shared/model'
+import { parseLaunchPoints } from '../shared/apps'
 import { resolveMode, shouldApplyScheduledMode, type Mode } from '../shared/modes'
 import { createPlatform, type Platform } from '../adapters/platform'
 import { supabaseConfigured } from '../shared/supabase'
 import { launchFailure } from '../shared/launch'
+import { EXIT_EVENT } from './FocusProvider'
 import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
 import { resolvePrefs } from '../shared/prefs'
 import { studioVisible } from '../../supabase/functions/_shared/studio'
 import { bundledCatalog, type CatalogEntry, type Capability } from '../shared/catalog'
-import { loadPrefs, savePrefs, type LauncherPrefs } from '../shared/launcherPrefs'
+import { loadPrefs, savePrefs, MAX_FAVORITES, type LauncherPrefs } from '../shared/launcherPrefs'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
-export type Screen = 'launcher' | 'home' | 'watch' | 'us' | 'ideas' | 'apps' | 'settings' | 'studio'
-export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing' | 'ambient'
+export type Screen = 'launcher' | 'home' | 'watch' | 'us' | 'ideas' | 'settings' | 'studio'
+export type Overlay = null | 'quick' | 'morning' | 'bedtime' | 'pairing' | 'ambient' | 'exit'
 
 export interface AppState {
   snap: Snapshot; tz: string; now: Date; mode: Mode; manualMode: Mode | null; setManualMode(m: Mode | null): void
@@ -78,14 +80,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setManualMode = useCallback((m: Mode | null) => setManualChoice(m), [])
   const [applied, setApplied] = useState<Mode>(() => resolveMode(new Date(), snap.household.tz, windows))
   const [guest, setGuest] = useState(false)
-  const [screen, setScreen] = useState<Screen>('home')
+  const [screen, setScreen] = useState<Screen>('launcher')
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [timerState, setTimerState] = useState<TimerState | 'unavailable'>('unavailable')
   const lastInput = useRef(Date.now())
-  const bootAt = useRef(lastInput.current) // unchanged until the first key press
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const lastLaunch = useRef<{ id: string; at: number }>({ id: '', at: 0 })
   const launch = useCallback(async (id: string, label: string) => {
+    const t = Date.now()
+    if (id && lastLaunch.current.id === id && t - lastLaunch.current.at < 1500) return // double press: ignore the repeat
+    lastLaunch.current = { id, at: t }
     const m = launchFailure(await platform.launchApp(id), label)
     if (m) { setToast(m); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 4000) }
   }, [platform])
@@ -101,24 +106,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => setNow(new Date()), 15_000)
     return () => { removeEventListener('keydown', bump, true); removeEventListener('mousemove', bump); clearInterval(id) }
   }, [])
-  useEffect(() => { // scheduled change only when idle on Our Home
+  useEffect(() => { // scheduled change only when idle on the launcher or Our Home
     const scheduled = resolveMode(now, tz, windows)
     if (shouldApplyScheduledMode(applied, scheduled, { screen, ritualActive: overlay === 'morning' || overlay === 'bedtime', idleMs: Date.now() - lastInput.current })) setApplied(scheduled)
   }, [now, tz, windows, applied, screen, overlay])
-  // Studio: only on work days in the work window, never for guests. It becomes the start screen once, when the app
-  // opens inside the window; it never takes the screen mid-session, and leaves only after a minute without input.
+  // Studio: only on work days in the work window, never for guests. It never replaces the launcher landing;
+  // it is a nav item while available and the screen leaves it after a minute without input once it closes.
   const studioOn = studioVisible(snap.studio.settings, now, tz, guest)
-  const startedStudio = useRef(false)
-  useEffect(() => { // "when the app opens": no key pressed yet and within 2 min of launch (a cached snapshot may arrive first)
-    if (startedStudio.current || !studioOn) return
-    startedStudio.current = true
-    if (screen === 'home' && lastInput.current === bootAt.current && Date.now() - bootAt.current < 120_000) setScreen('studio')
-  }, [studioOn, screen])
-  useEffect(() => { if (screen === 'studio' && !studioOn && (guest || Date.now() - lastInput.current >= 60_000)) setScreen('home') }, [now, screen, studioOn, guest])
+  useEffect(() => { if (screen === 'studio' && !studioOn && (guest || Date.now() - lastInput.current >= 60_000)) setScreen('launcher') }, [now, screen, studioOn, guest])
   useEffect(() => { // photo frame after N idle minutes on Our Home (0 = never)
     const n = prefs.ambientAfterMin
     if (n > 0 && overlay === null && screen === 'home' && Date.now() - lastInput.current >= n * 60_000) setOverlay('ambient')
   }, [now, prefs.ambientAfterMin, overlay, screen])
+
+  useEffect(() => { // root Back: confirm before leaving
+    const open = () => setOverlay('exit')
+    window.addEventListener(EXIT_EVENT, open)
+    return () => window.removeEventListener(EXIT_EVENT, open)
+  }, [])
 
   const refreshTimer = useCallback(async () => {
     const r = await ctrl.refresh()
@@ -137,10 +142,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isLive) { if (!snap.tasks.find((t) => t.id === id)?.done) void live.completeTask(id); return }
     setSnap((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }))
   }, [isLive, live, snap.tasks])
-  const catalog = useMemo(() => bundledCatalog().entries, [])
+  // Launcher: bundled catalog is the base; apps installed on the TV are appended when webOS lets us list them.
+  const [tvApps, setTvApps] = useState<CatalogEntry[]>([])
+  const [lpCap, setLpCap] = useState<Capability>('unverified')
+  useEffect(() => {
+    if (platform.simulated) return
+    let stop = false
+    void platform.call('luna://com.webos.applicationManager/listLaunchPoints', {}).then((r) => {
+      if (stop) return
+      if ('ok' in r && r.ok) {
+        setLpCap('supported')
+        setTvApps(parseLaunchPoints(r.data).map((a) => ({ id: a.id, title: a.label, kind: a.id.includes('.hdmi') ? 'input' : 'app', icon: null, source: 'tv', system: false })))
+      } else if ('ok' in r && /denied|permission|not allowed|security/i.test(r.error)) setLpCap('denied')
+    })
+    return () => { stop = true }
+  }, [platform])
+  const catalog = useMemo(() => {
+    const base = bundledCatalog().entries
+    return [...base, ...tvApps.filter((n) => !base.some((b) => b.id === n.id))]
+  }, [tvApps])
   const [launcherPrefs, setPrefsState] = useState<LauncherPrefs>(loadPrefs)
   const setLauncherPrefs = useCallback((p: LauncherPrefs) => { setPrefsState(p); savePrefs(p) }, [])
-  const capabilities: Record<string, Capability> = {}
+  const hasHousehold = isLive ? live.status === 'ready' && live.snapshot != null : true
+  const seedReady = hasHousehold || (isLive && live.status === 'pairing')
+  useEffect(() => { // first run: favorites start as the household's pinned apps; afterwards the launcher is local only
+    if (launcherPrefs.seeded || !seedReady) return
+    setLauncherPrefs({ ...launcherPrefs, favorites: appsOf(snap).slice(0, MAX_FAVORITES).map((a) => a.id), seeded: true })
+  }, [launcherPrefs, seedReady, snap, setLauncherPrefs])
+  const capabilities: Record<string, Capability> = { listLaunchPoints: lpCap, timerDirect: ctrl.verified ? 'supported' : 'unverified', homeRedirect: 'unverified' }
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, studioOn, overlay, setOverlay,
     platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast, images: isLive ? live.images : {},
