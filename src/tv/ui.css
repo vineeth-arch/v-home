@@ -114,3 +114,7 @@
 .dream-photo { object-fit: cover; }
 .da-a { fill: var(--amber); } .da-s { fill: var(--sage); } .da-d { fill: var(--surface-2); } .da-f { fill: var(--surface); } .da-w { fill: var(--text); }
 .da-stroke { stroke: var(--amber); }
+
+.settings-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+.gate { flex: 1; min-height: 0; display: grid; place-items: center; }
+.exit-panel { max-width: 1100px; }

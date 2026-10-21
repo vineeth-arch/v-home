@@ -19,6 +19,8 @@ test('mode windows: wrap, boundaries, manual override', () => {
 test('scheduled mode never interrupts', () => {
   const ok = { screen: 'home', ritualActive: false, idleMs: 61_000 }
   expect(shouldApplyScheduledMode('home', 'evening', ok)).toBe(true)
+  expect(shouldApplyScheduledMode('home', 'evening', { ...ok, screen: 'launcher' })).toBe(true)
+  expect(shouldApplyScheduledMode('home', 'evening', { ...ok, screen: 'settings' })).toBe(false)
   expect(shouldApplyScheduledMode('home', 'evening', { ...ok, screen: 'watch' })).toBe(false)
   expect(shouldApplyScheduledMode('home', 'evening', { ...ok, ritualActive: true })).toBe(false)
   expect(shouldApplyScheduledMode('home', 'evening', { ...ok, idleMs: 5000 })).toBe(false)
