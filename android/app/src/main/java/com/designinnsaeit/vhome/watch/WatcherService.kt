@@ -145,6 +145,9 @@ class WatcherService : Service() {
             if (host != cfg.host) { cfg = cfg.copy(host = host); Prefs.save(this, cfg) }
             val client = SsapClient(host, key, pin, false, network.socketFactory, manifest = Prefs.ssapManifest(this))
             val started = SystemClock.elapsedRealtime()
+            // Pause/Resume tapped while no runner existed only reached Prefs; bring the watcher in line.
+            if (cfg.paused && !watcher.paused) watcher.pause("paused by user")
+            else if (!cfg.paused && watcher.paused) watcher.resume()
             try {
                 client.open()
                 val r = Runner(
@@ -155,6 +158,7 @@ class WatcherService : Service() {
                 )
                 runner = r
                 r.session()
+                setLine("TV connection closed; reconnecting")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: NotPaired) {
