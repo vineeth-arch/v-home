@@ -78,8 +78,19 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * The Wi-Fi trigger only fires when the phone joins a network, so pairing or opening the app while
+     * already on home Wi-Fi must start watching itself. A visible activity may start a foreground service;
+     * repeat starts are harmless (the service runs its loop once).
+     */
+    private fun startWatchingIfReady() {
+        if (Prefs.load(this).pin == null || HomeNetwork.wifiNetwork(this) == null) return
+        runCatching { startForegroundService(Intent(this, WatcherService::class.java)) }
+    }
+
     override fun onResume() {
         super.onResume()
+        startWatchingIfReady()
         status.text = getSharedPreferences(Notify.STATUS_PREFS, MODE_PRIVATE)
             .getString("line", null) ?: getString(R.string.status_default)
         refreshPause()
@@ -135,6 +146,7 @@ class MainActivity : Activity() {
                 }
                 Prefs.save(this@MainActivity, applyPairing(currentConfig(), host, key, pin))
                 pairStatus.text = getString(R.string.paired_with, host)
+                startWatchingIfReady()
             } catch (e: Exception) {
                 pairStatus.text = e.message?.let { getString(R.string.pair_failed, it) }
                     ?: getString(R.string.pair_failed_unknown)
