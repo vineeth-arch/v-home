@@ -5,16 +5,14 @@ import { useApp } from './state'
 import { useFocusable, useFocusCtx, useLayer } from './FocusProvider'
 import { Btn } from './ui'
 import { AppIcon, LauncherEdit } from './LauncherEdit'
-import { applyLayout, MAX_FAVORITES, type Folder } from '../shared/launcherPrefs'
+import { applyLayout, MAX_FAVORITES, WALLPAPERS, type Folder } from '../shared/launcherPrefs'
 import { bundledCatalog, type CatalogEntry } from '../shared/catalog'
 import { pickDaily } from '../shared/reflections'
 import { localDate } from '../shared/daily'
 import { sharedNote } from '../shared/partnerNotes'
 
 // Ids match the shared WALLPAPERS list (WS-B); kept here so this file compiles on its own.
-export const WALLPAPER_PRESETS = [
-  { id: 'dusk', label: 'Dusk' }, { id: 'ocean', label: 'Ocean' }, { id: 'forest', label: 'Forest' }, { id: 'ember', label: 'Ember' }, { id: 'graphite', label: 'Graphite' },
-]
+export const WALLPAPER_PRESETS = WALLPAPERS.map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) }))
 const FOCUS_KEY = 'vhomeLauncher.lastFocus'
 const readFocus = () => { try { return sessionStorage.getItem(FOCUS_KEY) } catch { return null } }
 const writeFocus = (id: string) => { try { sessionStorage.setItem(FOCUS_KEY, id) } catch { /* private mode */ } }

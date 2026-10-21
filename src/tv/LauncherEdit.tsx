@@ -3,13 +3,12 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useApp } from './state'
 import { useFocusable, useFocusCtx, useLayer } from './FocusProvider'
 import { iconUrl, type CatalogEntry } from '../shared/catalog'
-import { MAX_FAVORITES, type Folder, type LauncherPrefs } from '../shared/launcherPrefs'
+import { MAX_FAVORITES, deleteFolder, moveToFolder, toggleFavorite, toggleHidden, type Folder, type LauncherPrefs } from '../shared/launcherPrefs'
 import { fnv1a } from '../shared/daily'
 
 export const FOLDER_NAMES = ['Streaming', 'Music', 'Kids', 'Games', 'Sports', 'Other']
 
 // ---- draft mutations (local stand-ins for the shared layout helpers; tiny and pure) ----
-const without = (a: string[], id: string) => a.filter((x) => x !== id)
 export const folderOf = (p: LauncherPrefs, id: string) => p.folders.find((f) => f.apps.includes(id))
 /** App ids (not system, not inputs) in grid order: p.order first, the rest in catalog order. */
 export function orderedIds(entries: CatalogEntry[], p: LauncherPrefs): string[] {
@@ -26,14 +25,6 @@ export function moveStep(p: LauncherPrefs, entries: CatalogEntry[], id: string, 
   const next = [...ids]; next[a] = nb; next[b] = id
   return { ...p, order: next }
 }
-export const toggleFav = (p: LauncherPrefs, id: string): LauncherPrefs =>
-  p.favorites.includes(id) ? { ...p, favorites: without(p.favorites, id) }
-    : p.favorites.length >= MAX_FAVORITES ? p : { ...p, favorites: [...p.favorites, id] }
-export const toggleHide = (p: LauncherPrefs, id: string): LauncherPrefs =>
-  p.hidden.includes(id) ? { ...p, hidden: without(p.hidden, id) } : { ...p, hidden: [...p.hidden, id] }
-export const moveToFolder = (p: LauncherPrefs, id: string, folderId: string | null): LauncherPrefs => ({
-  ...p, folders: p.folders.map((f) => ({ ...f, apps: f.id === folderId ? [...without(f.apps, id), id] : without(f.apps, id) })),
-})
 export function createFolder(p: LauncherPrefs): LauncherPrefs {
   const used = p.folders.map((f) => f.name)
   const name = FOLDER_NAMES.find((n) => !used.includes(n)) ?? `Folder ${p.folders.length + 1}`
@@ -47,9 +38,6 @@ export function renameFolder(p: LauncherPrefs, folderId: string): LauncherPrefs 
   const name = cycle.find((n) => !others.includes(n)) ?? cycle[0]
   return { ...p, folders: p.folders.map((x) => (x.id === folderId ? { ...x, name } : x)) }
 }
-/** Apps go back to the grid (they were never removed from `order`). */
-export const deleteFolder = (p: LauncherPrefs, folderId: string): LauncherPrefs => ({ ...p, folders: p.folders.filter((f) => f.id !== folderId) })
-
 // ---- shared bits ----
 export function AppIcon({ entry, size = 64 }: { entry: CatalogEntry; size?: number }) {
   const url = iconUrl(entry)
@@ -96,9 +84,9 @@ export function LauncherEdit({ onClose }: { onClose: () => void }) {
           <b className="l-edit-sel">{selEntry.title}</b>
           <LBtn id="le-act-earlier" scope={SCOPE} onClick={() => apply(moveStep(draft, catalog, selEntry.id, -1))}>Move earlier</LBtn>
           <LBtn id="le-act-later" scope={SCOPE} onClick={() => apply(moveStep(draft, catalog, selEntry.id, 1))}>Move later</LBtn>
-          <LBtn id="le-act-fav" scope={SCOPE} onClick={() => apply(toggleFav(draft, selEntry.id), !draft.favorites.includes(selEntry.id) && draft.favorites.length >= MAX_FAVORITES ? 'Favorites are full (6).' : '')}>
+          <LBtn id="le-act-fav" scope={SCOPE} onClick={() => apply(toggleFavorite(draft, selEntry.id), !draft.favorites.includes(selEntry.id) && draft.favorites.length >= MAX_FAVORITES ? 'Favorites are full (6).' : '')}>
             {draft.favorites.includes(selEntry.id) ? 'Remove favorite' : 'Add favorite'}</LBtn>
-          <LBtn id="le-act-hide" scope={SCOPE} onClick={() => apply(toggleHide(draft, selEntry.id))}>{draft.hidden.includes(selEntry.id) ? 'Unhide' : 'Hide'}</LBtn>
+          <LBtn id="le-act-hide" scope={SCOPE} onClick={() => apply(toggleHidden(draft, selEntry.id))}>{draft.hidden.includes(selEntry.id) ? 'Unhide' : 'Hide'}</LBtn>
           {selFolder && <LBtn id="le-act-out" scope={SCOPE} onClick={() => apply(moveToFolder(draft, selEntry.id, null))}>Out of {selFolder.name}</LBtn>}
           {draft.folders.filter((f) => f.id !== selFolder?.id).map((f) => <LBtn key={f.id} id={`le-act-in-${f.id}`} scope={SCOPE} onClick={() => apply(moveToFolder(draft, selEntry.id, f.id))}>Into {f.name}</LBtn>)}
           <LBtn id="le-act-done" scope={SCOPE} className="ghost" onClick={done}>Done</LBtn>

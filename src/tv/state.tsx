@@ -162,18 +162,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return [...base, ...tvApps.filter((n) => !base.some((b) => b.id === n.id))]
   }, [tvApps])
   const [launcherPrefs, setPrefsState] = useState<LauncherPrefs>(loadPrefs)
-  const setLauncherPrefs = useCallback((p: LauncherPrefs) => { setPrefsState(p); savePrefs(p) }, [])
+  // any save (seed or user edit) marks the layout as chosen, so household pins never overwrite it later
+  const setLauncherPrefs = useCallback((p: LauncherPrefs) => { const q = { ...p, seeded: true }; setPrefsState(q); savePrefs(q) }, [])
   const hasHousehold = isLive ? live.status === 'ready' && live.snapshot != null : true
-  const seedReady = hasHousehold || (isLive && live.status === 'pairing')
-  useEffect(() => { // first run: favorites start as the household's pinned apps; afterwards the launcher is local only
-    if (launcherPrefs.seeded || !seedReady) return
-    setLauncherPrefs({ ...launcherPrefs, favorites: appsOf(snap).slice(0, MAX_FAVORITES).map((a) => a.id), seeded: true })
-  }, [launcherPrefs, seedReady, snap, setLauncherPrefs])
+  const pinnedIds = appsOf(snap).slice(0, MAX_FAVORITES).map((a) => a.id)
+  useEffect(() => { // first run: favorites start as the household's pinned apps once known; afterwards local only
+    if (launcherPrefs.seeded || !hasHousehold) return
+    setLauncherPrefs({ ...launcherPrefs, favorites: pinnedIds })
+  }, [launcherPrefs, hasHousehold, pinnedIds.join(), setLauncherPrefs]) // eslint-disable-line react-hooks/exhaustive-deps
+  // unpaired and not yet seeded: show the default strip without saving it
+  const shownPrefs = launcherPrefs.seeded ? launcherPrefs : { ...launcherPrefs, favorites: pinnedIds }
   const capabilities: Record<string, Capability> = { listLaunchPoints: lpCap, timerDirect: ctrl.verified ? 'supported' : 'unverified', homeRedirect: 'unverified' }
   const value: AppState = {
     snap, tz, now, mode, manualMode, setManualMode, guest, setGuest, screen, go: setScreen, studioOn, overlay, setOverlay,
     platform, ctrl, timerState, refreshTimer, toggleTask, weather: isLive ? liveWeather : snap.household.city ? weatherView({ ...fixtureWeather, fetchedAt: now.getTime() }, now.getTime(), false) : null, live: isLive ? live : null, launch, toast, images: isLive ? live.images : {},
-    catalog, launcherPrefs, setLauncherPrefs, capabilities,
+    catalog, launcherPrefs: shownPrefs, setLauncherPrefs, capabilities,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

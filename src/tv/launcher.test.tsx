@@ -14,7 +14,8 @@ vi.mock('./state', () => ({ useApp: () => app }))
 
 import { FocusProvider } from './FocusProvider'
 import { Launcher, LauncherSettings, Diagnostics } from './Launcher'
-import { createFolder, deleteFolder, moveToFolder, moveStep, orderedIds } from './LauncherEdit'
+import { createFolder, moveStep, orderedIds } from './LauncherEdit'
+import { deleteFolder, moveToFolder } from '../shared/launcherPrefs'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let host: HTMLDivElement, root: Root
