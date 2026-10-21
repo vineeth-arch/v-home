@@ -15,8 +15,9 @@
     <application
         android:allowBackup="false"
         android:label="V/HOME Watcher"
-        android:icon="@android:drawable/ic_menu_view"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.VHome">
 
         <activity
             android:name=".MainActivity"

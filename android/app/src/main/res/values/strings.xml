@@ -2,50 +2,112 @@
 <resources>
     <string name="channel_name">Watching TV</string>
     <string name="tap_to_start">Tap to start watching</string>
+    <string name="app_title">V/HOME Watcher</string>
 
-    <string name="section_tv">TV</string>
-    <string name="hint_tv_ip">TV IP address</string>
-    <string name="hint_vhome_id">V/HOME app ID</string>
-    <string name="hint_home_ids">LG Home app IDs, comma separated</string>
-    <string name="save">Save</string>
-    <string name="saved">Saved</string>
-    <string name="double_home">Press Home twice to stay on LG Home</string>
-    <string name="double_home_help">When on, a second Home press within 3 seconds keeps LG Home instead of opening V/HOME.</string>
-    <string name="pair">Pair with TV</string>
+    <!-- First run -->
+    <string name="first_title">Pair your TV</string>
+    <string name="step1">Turn the TV on, on the same Wi-Fi.</string>
+    <string name="step2">Enter the TV\'s IP (TV Settings, Network).</string>
+    <string name="step3">Tap Pair and accept on the TV.</string>
+    <string name="pair">Pair</string>
+    <string name="pair_again">Pair again</string>
     <string name="need_ip">Enter the TV IP address first.</string>
-    <string name="pair_prompt">Accept the prompt on your TV…</string>
+    <string name="pair_prompt">Accept the prompt on your TV.</string>
     <string name="paired_with">Paired with %1$s</string>
-    <string name="pair_failed">Could not pair: %1$s</string>
-    <string name="pair_failed_unknown">Could not reach the TV.</string>
+    <string name="pair_no_answer">TV didn\'t answer. Is it on and on this Wi-Fi?</string>
+    <string name="pair_not_accepted">The TV didn\'t accept in time. Tap Pair and accept the prompt on the TV.</string>
 
-    <string name="section_phone">Phone</string>
-    <string name="battery_ok">Battery: unrestricted</string>
-    <string name="battery_restricted">Battery: may be limited in the background</string>
-    <string name="battery_fix">Allow background use</string>
-    <string name="notif_ok">Notifications: allowed</string>
-    <string name="notif_off">Notifications: off</string>
-    <string name="notif_fix">Allow notifications</string>
+    <!-- Status hero -->
+    <string name="title_watching">Watching your TV</string>
+    <string name="title_waiting_wifi">Waiting for home Wi-Fi</string>
+    <string name="title_away">Not on home Wi-Fi</string>
+    <string name="title_looking">Looking for your TV</string>
+    <string name="title_tv_off">TV is off</string>
+    <string name="title_connecting">Connecting</string>
+    <string name="title_paused">Paused</string>
+    <string name="title_not_paired">Not paired yet</string>
+    <string name="title_problem">Needs attention</string>
+    <string name="since">Since %1$s</string>
+    <string name="last_redirect">Last redirect %1$s s · %2$s</string>
+    <string name="just_now">just now</string>
+    <string name="paused_until">Paused until %1$s</string>
+    <string name="paused_open">Until you resume</string>
+    <string name="count_label">Home presses redirected today</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
+    <string name="fix_it">Fix it</string>
+    <string name="pause_for">Pause for</string>
+    <string name="pause_30">30 min</string>
+    <string name="pause_60">1 h</string>
+    <string name="pause_120">2 h</string>
+    <string name="pause_open">Until I resume</string>
 
-    <string name="section_status">Status</string>
-    <string name="status_default">Not watching yet</string>
-    <string name="pause">Pause watching</string>
-    <string name="resume">Resume watching</string>
-    <string name="start_now">Start watching</string>
-    <string name="test_tv">Test TV</string>
-    <string name="testing">Testing the TV…</string>
+    <!-- Setup -->
+    <string name="section_setup">Setup</string>
+    <string name="setup_complete">Setup complete</string>
+    <string name="setup_complete_why">Everything the watcher needs is in place.</string>
+    <string name="show">Show</string>
+    <string name="hide">Hide</string>
+    <string name="fix">Fix</string>
+    <string name="a11y_ok">Done</string>
+    <string name="a11y_bad">Needs fixing</string>
+    <string name="a11y_guided">Check this yourself</string>
+    <string name="open">Open</string>
+    <string name="row_paired">TV paired</string>
+    <string name="row_paired_why">The watcher can only talk to a TV it has paired with.</string>
+    <string name="row_notif">Notifications allowed</string>
+    <string name="row_notif_why">Shows that it\'s watching and gives you Pause in one tap.</string>
+    <string name="row_battery">Battery unrestricted</string>
+    <string name="row_battery_why">Lets it keep watching with the screen off.</string>
+    <string name="row_background">Background not restricted</string>
+    <string name="row_background_why">Android stops restricted apps from running in the background.</string>
+    <string name="row_bucket">Activity level</string>
+    <string name="row_bucket_ok">Android treats the watcher as in use.</string>
+    <string name="row_bucket_bad">Samsung or Android is limiting the watcher.</string>
+    <string name="row_sleep">Put unused apps to sleep: Off</string>
+    <string name="row_sleep_why">Samsung may stop the watcher otherwise. Battery, Background usage limits.</string>
+    <string name="row_recents">Keep open in Recents</string>
+    <string name="row_recents_why">Stops it closing when you clear Recents. Open Recents, tap the V/HOME Watcher icon, choose Keep open.</string>
+    <string name="row_quickstart">Quick Start+ on the TV</string>
+    <string name="row_quickstart_why">Lets the watcher reach the TV as soon as it turns on. In TV Settings, search for Quick Start+ and turn it on.</string>
+
+    <!-- TV -->
+    <string name="section_tv">TV</string>
+    <string name="tv_name">LG TV · %1$s</string>
+    <string name="tv_no_ip">LG TV</string>
+    <string name="edit_ip">Edit</string>
+    <string name="hint_tv_ip">TV IP address</string>
+    <string name="test_tv">Test connection</string>
+    <string name="testing">Testing the TV.</string>
     <string name="test_no_wifi">Not on Wi-Fi.</string>
     <string name="test_not_paired">Not paired yet. Tap Pair first.</string>
     <string name="test_no_answer">No answer from %1$s on port 3001. Is the TV on and on this Wi-Fi?</string>
     <string name="test_match">TV at %1$s answered and its certificate matches. Connection is good.</string>
     <string name="test_mismatch">Something at %1$s answered, but it is not the paired TV. Pair again if the TV was reset.</string>
+    <string name="open_on_tv">Open V/HOME on TV</string>
+    <string name="open_sending">Sending to the TV.</string>
+    <string name="open_sent">Sent. Check the TV.</string>
+    <string name="open_failed">TV didn\'t answer.</string>
+    <string name="open_needs_wifi">Needs Wi-Fi. Connect to home Wi-Fi first.</string>
+
+    <!-- Behaviour -->
+    <string name="section_behaviour">Behaviour</string>
+    <string name="double_home">Press Home twice to stay on LG Home</string>
+    <string name="double_home_help">A second Home press within 3 seconds keeps LG Home instead of opening V/HOME.</string>
+
+    <!-- Advanced -->
+    <string name="section_advanced">Advanced</string>
+    <string name="hint_vhome_id">V/HOME app ID</string>
+    <string name="hint_home_ids">LG Home app IDs, comma separated</string>
+    <string name="save">Save</string>
+    <string name="saved">Saved</string>
+    <string name="hint_sink">Log receiver on the Mac (IP:port), empty = off</string>
+    <string name="sink_example">192.168.1.20:5555</string>
     <string name="section_log">Event log</string>
     <string name="copy_log">Copy log</string>
-    <string name="refresh_log">Refresh</string>
     <string name="log_copied">Log copied. Paste it to Claude.</string>
     <string name="log_empty">No events yet.</string>
-    <string name="hint_sink">Send logs to Mac (IP:port), empty = off</string>
     <string name="send_log">Send full log to Mac</string>
     <string name="log_sent">Full log sent to the Mac.</string>
     <string name="log_send_failed">Could not reach the Mac. Is the log receiver running and the Mac on this Wi-Fi?</string>
-    <string name="footer">Watching starts automatically when this phone joins home Wi-Fi.</string>
 </resources>
