@@ -29,3 +29,9 @@ test('overlay layers set focus scope; screen layers do not', () => {
   const o = s.push('quick'); expect(s.scope).toBe('quick')
   s.remove(o); expect(s.scope).toBe('main')
 })
+
+test('a same-row neighbour a few px lower is not "down"', () => {
+  const row: Box[] = [{ id: 'chip1', x: 0, y: 3, w: 100, h: 28 }, { id: 'chip2', x: 120, y: 0, w: 100, h: 29 }, { id: 'list', x: 0, y: 300, w: 200, h: 40 }]
+  expect(pickNext(row, 'chip2', 'down')).toBe('list')
+  expect(pickNext(row, 'chip1', 'up')).toBeNull()
+})

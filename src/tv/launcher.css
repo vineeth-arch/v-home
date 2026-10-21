@@ -1,0 +1,91 @@
+/* Launcher home: dark neutral palette, static gradient wallpaper (user decision 2026-10-21, design-system.md "Launcher").
+   Chromium 108: hsl/hex only, no backdrop-filter, no continuous animation. Focus motion = transform + opacity only. */
+.launcher, .l-edit {
+  --l-bg: #0e1013; --l-surface: #1a1d22; --l-surface-2: #252a32; --l-text: #eceff4; --l-dim: #a3abb7;
+  --l-focus: #f4f6fa; --l-accent: #9db8e8; --l-hair: rgba(255, 255, 255, .07);
+  --l-shadow: 0 14px 30px -10px rgba(0, 0, 0, .65); --l-t: 170ms;
+}
+
+/* wallpaper presets, painted on #stage (html[data-l-wall] set by Launcher) so they sit behind the header and nav */
+html[data-l-wall] #stage { background-repeat: no-repeat; background-size: 100% 100%; }
+html[data-l-wall='dusk'] #stage { background-color: #101119; background-image: radial-gradient(1300px 760px at 12% -5%, #2a2646 0%, rgba(42, 38, 70, 0) 62%), radial-gradient(1000px 640px at 100% 105%, #3a2433 0%, rgba(58, 36, 51, 0) 62%), linear-gradient(#12131b, #0d0e13); }
+html[data-l-wall='ocean'] #stage { background-color: #0b141b; background-image: radial-gradient(1300px 760px at 85% -5%, #12364a 0%, rgba(18, 54, 74, 0) 62%), radial-gradient(1000px 640px at 0% 105%, #0f2a3a 0%, rgba(15, 42, 58, 0) 62%), linear-gradient(#0c161d, #090f14); }
+html[data-l-wall='forest'] #stage { background-color: #0d1511; background-image: radial-gradient(1300px 760px at 10% -5%, #1c3a2a 0%, rgba(28, 58, 42, 0) 62%), radial-gradient(1000px 640px at 100% 105%, #2a3320 0%, rgba(42, 51, 32, 0) 62%), linear-gradient(#0e1612, #0a0f0c); }
+html[data-l-wall='ember'] #stage { background-color: #16100e; background-image: radial-gradient(1300px 760px at 90% -5%, #432618 0%, rgba(67, 38, 24, 0) 62%), radial-gradient(1000px 640px at 0% 105%, #3a1f24 0%, rgba(58, 31, 36, 0) 62%), linear-gradient(#18110f, #100b0a); }
+html[data-l-wall='graphite'] #stage { background-color: #121316; background-image: linear-gradient(160deg, #1b1d22 0%, #121316 55%, #0e0f12 100%); }
+
+.launcher { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; color: var(--l-text); }
+.launcher .l-dim, .l-edit .l-dim { color: var(--l-dim); font-size: 26px; }
+
+.l-card { flex: none; display: flex; align-items: center; gap: 48px; background: var(--l-surface); border-radius: 20px; padding: 14px 32px; box-shadow: inset 0 0 0 1px var(--l-hair); }
+.l-quote { flex: 1; min-width: 0; }
+.l-quote p { margin: 0; font-family: var(--serif); font-size: 34px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.l-side { flex: 0 0 420px; font-size: 26px; line-height: 1.25; }
+
+.l-sec { flex: none; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.l-apps { flex: 1; }
+.l-h { display: flex; align-items: center; justify-content: space-between; height: 44px; font-size: 26px; letter-spacing: .08em; text-transform: uppercase; color: var(--l-dim); }
+.l-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 20px; }
+.l-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; margin: -10px -12px; } /* padding keeps ring and 1.05 scale unclipped */
+.l-scroll::-webkit-scrollbar { display: none; }
+
+.l-slot { height: 96px; border-radius: 22px; border: 2px dashed var(--l-hair); }
+
+/* tiles */
+.launcher .l-tile { position: relative; font: inherit; color: var(--l-text); background: var(--l-surface); border: 0; border-radius: 22px; padding: 12px; height: 136px; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; outline: none; cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--l-hair); transition: transform var(--l-t) var(--ease-out); }
+.launcher .l-tile.compact { height: 96px; flex-direction: row; justify-content: flex-start; padding: 0 20px; gap: 16px; text-align: left; }
+.launcher .l-tile.chip { height: auto; flex-direction: row; padding: 4px 26px; border-radius: 999px; font-size: 26px; letter-spacing: 0; text-transform: none; background: var(--l-surface-2); }
+.launcher .l-tile.off { opacity: .5; }
+.launcher .l-tile::before { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: var(--l-shadow); opacity: 0; transition: opacity var(--l-t) var(--ease-out); z-index: -1; }
+.launcher .l-tile::after { content: ''; position: absolute; inset: -5px; border-radius: 27px; border: 3px solid var(--l-focus); opacity: 0; transition: opacity var(--l-t) var(--ease-out); pointer-events: none; }
+.launcher .l-tile.chip::after { border-radius: 999px; }
+.launcher .l-tile[data-focused] { transform: scale(1.05); background: var(--l-surface-2); will-change: transform; }
+.launcher .l-tile[data-focused]::before, .launcher .l-tile[data-focused]::after { opacity: 1; }
+.l-lbl { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.l-lbl .ttl { font-size: 28px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.l-lbl .sub { font-size: 26px; color: var(--l-dim); }
+
+.l-ico { width: var(--s); height: var(--s); border-radius: calc(var(--s) * .24); object-fit: contain; flex: none; }
+.l-ico.letter { display: grid; place-items: center; font-weight: 700; font-size: calc(var(--s) * .5); background: hsl(var(--h) 28% 30%); color: hsl(var(--h) 55% 90%); }
+.l-mini { width: 64px; height: 64px; flex: none; display: grid; grid-template-columns: 1fr 1fr; place-items: center; gap: 4px; padding: 3px; border-radius: 16px; background: var(--l-surface-2); }
+
+/* folder overlay + editor reuse the shell overlay, recoloured */
+.l-folder > .panel, .l-edit > .panel { background: var(--l-surface); color: var(--l-text); }
+.l-folder .btn { background: var(--l-surface-2); color: var(--l-text); border-color: transparent; }
+.l-edit > .panel { gap: 14px; padding: 28px 40px; }
+.l-edit-top { display: flex; align-items: center; gap: 16px; }
+.l-edit-top h2 { flex: 1; font-size: 44px; }
+.l-edit-acts, .l-edit-folders { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 64px; }
+.l-edit-sel { font-size: 30px; margin-right: 8px; }
+.l-edit-folder { display: inline-flex; align-items: center; gap: 10px; margin-right: 12px; font-size: 26px; }
+.l-edit-msg { min-height: 34px; font-size: 26px; color: var(--l-accent); }
+.l-edit-list { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 10px 12px; margin: -10px -12px; }
+.l-edit-list::-webkit-scrollbar { display: none; }
+.l-edit .l-btn { position: relative; font: inherit; font-size: 26px; color: var(--l-text); background: var(--l-surface-2); border: 0; border-radius: 16px; padding: 10px 22px; min-height: 64px; text-align: center; outline: none; cursor: pointer; transition: transform var(--l-t) var(--ease-out); box-shadow: inset 0 0 0 1px var(--l-hair); }
+.l-edit .l-btn.primary { background: var(--l-text); color: var(--l-bg); font-weight: 700; }
+.l-edit .l-btn.ghost { background: transparent; }
+.l-edit .l-btn::after { content: ''; position: absolute; inset: -4px; border-radius: 20px; border: 3px solid var(--l-focus); opacity: 0; transition: opacity var(--l-t) var(--ease-out); pointer-events: none; }
+.l-edit .l-btn[data-focused] { transform: scale(1.04); }
+.l-edit .l-btn[data-focused]::after { opacity: 1; }
+.l-edit .l-edit-app { display: flex; align-items: center; gap: 14px; text-align: left; padding: 8px 16px; }
+.l-edit .l-edit-app.sel { box-shadow: inset 0 0 0 3px var(--l-accent); }
+.l-edit .l-edit-app.off { opacity: .55; }
+.l-edit-name { display: flex; flex-direction: column; min-width: 0; }
+.l-edit-name .ttl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.l-edit-name .tag { font-size: 26px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* settings sections (live on the household screen, so they use its warm tokens) */
+.l-set { display: flex; flex-direction: column; gap: 12px; }
+.l-set h3 { margin: 0; font-size: 34px; }
+.l-diag { border-radius: 16px; padding: 12px 16px; margin: 0 -16px; outline: none; }
+.l-diag[data-focused] { box-shadow: inset 0 0 0 3px var(--amber); }
+
+/* motion off: preference or OS */
+.launcher[data-motion='reduced'] .l-tile, .launcher[data-motion='reduced'] .l-tile::before, .launcher[data-motion='reduced'] .l-tile::after { transition: none; }
+.launcher[data-motion='reduced'] .l-tile[data-focused] { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .launcher .l-tile, .launcher .l-tile::before, .launcher .l-tile::after, .l-edit .l-btn, .l-edit .l-btn::after { transition: none; }
+  .launcher .l-tile[data-focused], .l-edit .l-btn[data-focused] { transform: none; }
+}

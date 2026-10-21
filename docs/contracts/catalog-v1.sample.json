@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-10-21T10:00:00Z",
+  "tv": { "model": "43NU885BPLA", "firmware": "43.04.26" },
+  "entries": [
+    { "id": "netflix", "title": "Netflix", "kind": "app", "icon": "netflix.png", "source": "companion", "system": false },
+    { "id": "youtube.leanback.v4", "title": "YouTube", "kind": "app", "icon": null, "source": "companion", "system": false },
+    { "id": "com.webos.app.hdmi1", "title": "HDMI 1", "kind": "input", "icon": null, "source": "companion", "system": false },
+    { "id": "com.webos.app.livetv", "title": "Live TV", "kind": "app", "icon": null, "source": "companion", "system": true }
+  ]
+}

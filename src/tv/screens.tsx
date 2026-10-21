@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Btn, DreamPic, fmtDay, fmtTime } from './ui'
 import { useLayer } from './FocusProvider'
 import { useApp, personName, type Screen } from './state'
@@ -6,29 +6,30 @@ import { pickDaily } from '../shared/reflections'
 import { localDate } from '../shared/daily'
 import { upcoming } from '../shared/upcoming'
 import { explainEmpty, pickForUs, topMatches, type Candidate, type Filters } from '../shared/picker'
-import { appsOf, type PinnedApp, type WatchItem } from '../shared/model'
+import { appsOf, type WatchItem } from '../shared/model'
 import { appForService } from '../shared/launch'
 import { heroDream } from '../shared/prefs'
 import { mondayOf } from '../shared/week'
 import { notesForToday, sharedNote } from '../shared/partnerNotes'
-import { allApps, parseLaunchPoints } from '../shared/apps'
+import { LauncherSettings, Diagnostics } from './Launcher'
 import qrcode from 'qrcode-generator'
 
 export const NAV: { id: Screen; label: string }[] = [
-  { id: 'home', label: 'Our Home' }, { id: 'watch', label: 'Watch Together' }, { id: 'us', label: 'Us' }, { id: 'ideas', label: 'Idea Wall' }, { id: 'apps', label: 'Apps' },
+  { id: 'launcher', label: 'Home' }, { id: 'home', label: 'Our Home' }, { id: 'watch', label: 'Watch Together' }, { id: 'settings', label: 'Settings' },
 ]
 const MODE_LABEL = { home: 'Home', morning: 'Morning', evening: 'Evening' } as const
 
 export function Header({ title }: { title?: string }) {
-  const { now, tz, snap, mode, manualMode, setManualMode, setOverlay, go, weather, screen } = useApp()
+  const { now, tz, snap, mode, manualMode, setManualMode, setOverlay, weather } = useApp()
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }).format(now))
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const names = snap.household.people.map((p) => p.name).join(' & ')
   const cycle = () => setManualMode(manualMode === null ? 'home' : manualMode === 'home' ? 'morning' : manualMode === 'morning' ? 'evening' : null)
   return (
     <div className="hdr">
       {title ? <h1>{title}</h1> : <>
         <div className="clock">{fmtTime(now, tz)}</div>
-        <div className="when"><span className="small">{fmtDay(now, tz)}</span><span className="greet">{greet}, {snap.household.people.map((p) => p.name).join(' & ') || snap.household.name}</span></div>
+        <div className="when"><span className="small">{fmtDay(now, tz)}</span><span className="greet">{names ? `${greet}, ${names}` : greet}</span></div>
       </>}
       <div className="sp" />
       {weather ? (
@@ -38,7 +39,6 @@ export function Header({ title }: { title?: string }) {
       ) : <div className="wx dim">{snap.household.lat == null ? 'Set up weather on your phone' : 'Weather loading…'}</div>}
       <Btn id="hdr-mode" className="chip" onClick={cycle}>{manualMode ? MODE_LABEL[mode] : `Auto · ${MODE_LABEL[mode]}`}</Btn>
       <Btn id="hdr-quick" className="chip" onClick={() => setOverlay('quick')}>Quick controls</Btn>
-      {screen !== 'settings' && <Btn id="hdr-settings" className="chip ghost" onClick={() => go('settings')}>Settings</Btn>}
     </div>
   )
 }
@@ -104,7 +104,9 @@ export function OurHome() {
       </div>}
     </div>
     <div className="strip">
-      {appsOf(snap).slice(0, 6).map((a) => <Btn key={a.id} id={`app-${a.id}`} onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}
+      <Btn id="strip-us" onClick={() => go('us')}>Us</Btn>
+      <Btn id="strip-ideas" onClick={() => go('ideas')}>Idea Wall</Btn>
+      {appsOf(snap).slice(0, 4).map((a) => <Btn key={a.id} id={`app-${a.id}`} onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}
     </div>
   </>
 }
@@ -231,28 +233,6 @@ export function Ideas() {
   </>
 }
 
-/** Plain text list of apps and inputs. No icons, no ads. Each row uses the same launcher (and error message) as the strip. */
-export function Apps() {
-  const { snap, launch, platform } = useApp()
-  const [page, setPage] = useState(0)
-  const [installed, setInstalled] = useState<PinnedApp[]>([])
-  useEffect(() => { // apps installed on the TV, if webOS allows this app to list them; otherwise the curated list only
-    if (platform.simulated) return
-    void platform.call('luna://com.webos.applicationManager/listLaunchPoints', {}).then((r) => { if ('ok' in r && r.ok) setInstalled(parseLaunchPoints(r.data)) })
-  }, [platform])
-  const list = allApps(snap.household.customApps, installed)
-  const per = 12, pages = Math.max(1, Math.ceil(list.length / per))
-  return <>
-    <div className="scroll-free"><div className="apps-grid">{list.slice(page * per, page * per + per).map((a, k) => (
-      <Btn key={a.id} id={`apps-${a.id}`} initial={k === 0} className="app-row" onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>))}</div></div>
-    {pages > 1 && <div className="presets">
-      <Btn id="apps-prev" className="chip ghost" onClick={() => setPage((p) => (p + pages - 1) % pages)}>Previous</Btn>
-      <span className="dim small" style={{ alignSelf: 'center' }}>Page {page + 1} of {pages}</span>
-      <Btn id="apps-next" className="chip ghost" onClick={() => setPage((p) => (p + 1) % pages)}>Next</Btn></div>}
-    <div className="dim small">Add more apps from your phone: Settings, More apps.</div>
-  </>
-}
-
 export function Settings() {
   const { snap, ctrl, setOverlay, platform, live } = useApp()
   const [confirmUnpair, setConfirmUnpair] = useState(false)
@@ -265,7 +245,8 @@ export function Settings() {
     ['Last sync', new Date(snap.syncedAt).toLocaleTimeString()],
     ['Volume, sound, picture', 'Not shown: only controls verified on this TV appear in Quick controls.'],
   ]
-  return <>
+  return <div className="settings-scroll">
+    {live && live.status !== 'ready' && <PairingGate />}
     <div className="card">{rows.map(([a, b]) => <div className="row" key={a}><span className="t">{a}</span><span>{b}</span></div>)}</div>
     <div className="presets">
       {!confirmUnpair
@@ -274,7 +255,9 @@ export function Settings() {
             <Btn id="set-unpair-no" initial className="ghost" onClick={() => setConfirmUnpair(false)}>Keep paired</Btn>
             <Btn id="set-unpair-yes" className="ghost" onClick={() => (live ? void live.unpair() : setOverlay('pairing'))}>Yes, unpair</Btn></>}
     </div>
-  </>
+    <LauncherSettings />
+    <Diagnostics />
+  </div>
 }
 
 const phoneUrl = (import.meta.env.VITE_PHONE_URL as string | undefined) ?? 'https://vhome.example'
@@ -297,10 +280,10 @@ export function Pairing({ onClose }: { onClose: () => void }) {
   return <div className="overlay"><PairCard code="K7M2QX" note="Simulation code. The real code expires after 10 minutes." onBack={onClose} /></div>
 }
 
-/** Live: shown whenever this TV is not paired (first run, revoked, or unpaired). */
+/** Live: shown inside household screens and Settings whenever this TV is not paired (first run, revoked, or unpaired). */
 export function PairingGate() {
   const { live } = useApp()
-  return <div className="app" style={{ display: 'grid', placeItems: 'center' }}>
+  return <div className="gate">
     <PairCard code={live?.code ?? ''} note={live?.status === 'booting' ? 'Connecting…' : live?.offline ? 'Cannot reach the household cloud. Retrying…' : 'The code expires after 10 minutes and refreshes on its own.'} />
   </div>
 }

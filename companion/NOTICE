@@ -1,0 +1,22 @@
+V/HOME companion
+
+The SSAP client, the foreground-app watcher idea and the catalog sync are adapted
+from webos-vibehack by OmkarK97 (MIT License), https://github.com/OmkarK97/webos-vibehack
+(files lgtv.py, home-watch.py, sync-apps.py, read at commit
+31a518aef23768067975f3ac2e464462a8046bab). The watcher and the catalog writer were
+rewritten (launch results are checked, circuit breakers, icon failures keep the entry).
+
+Pairing details (wss port 3001, unsigned manifest with a flat permissions list) follow
+aiowebostv by home-assistant-libs (Apache License 2.0),
+https://github.com/home-assistant-libs/aiowebostv, head commit
+7ffa34f61530b75aa25b198dc78f39bc91203ab6. It is a reference only, not a dependency, and no
+code or signed manifest block from it is included.
+
+MIT License, Copyright (c) 2026 Gathin, Copyright (c) 2026 OmkarK97 (webos-vibehack):
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated documentation files, to deal
+in the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, subject to the above copyright notice and this permission notice being
+included in all copies or substantial portions of the Software. THE SOFTWARE IS
+PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.

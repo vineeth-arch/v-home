@@ -20,4 +20,4 @@
 | Quick Access key opens V/HOME | yes | not run |
 
 ## If V/HOME does not come back reliably
-An experimental helper is planned but not built: a small V/HOME service that asks the TV to launch V/HOME when it wakes. It may be blocked by the TV, and it disappears if Developer Mode expires. It will only be built after tests A and B are run.
+A Mac helper now exists (V/HOME 2.0): it watches which app is in front over LG's remote-control connection and opens V/HOME when LG Home appears. LG Home still flashes briefly, and it only works while the Mac is awake and on the same Wi-Fi. It is not verified on this TV yet. Setup, pause and removal: [COMPANION.md](COMPANION.md).
