@@ -4,6 +4,8 @@
     <color name="paper">#FAFAF7</color>
     <color name="paper_2">#EFEFEA</color>
     <color name="grey">#808080</color>
+    <!-- spec grey is 3.8:1 on paper; small text needs 4.5:1, so secondary text uses this (borders keep grey) -->
+    <color name="text_dim">#5E5E5E</color>
     <color name="red">#D62828</color>
     <color name="red_pressed">#C52525</color>
     <color name="blue">#1D3FBF</color>

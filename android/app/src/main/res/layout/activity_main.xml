@@ -227,7 +227,7 @@
                         style="@style/T.Small"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/grey" />
+                        android:textColor="@color/text_dim" />
                 </LinearLayout>
             </LinearLayout>
 

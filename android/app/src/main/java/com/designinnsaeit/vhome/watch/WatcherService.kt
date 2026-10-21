@@ -261,7 +261,10 @@ class WatcherService : Service() {
                 },
             )
             if (host == null) {
-                if (fp == null || homePrefs.getString("fp", null) != fp) {
+                // Never-seen fingerprint (fresh install or first run of this build) counts as home: an already-paired
+                // phone at home with the TV off must keep retrying, not go AWAY until the TV happens to be seen once.
+                val known = homePrefs.getString("fp", null)
+                if (known != null && (fp == null || known != fp)) {
                     // Not a Wi-Fi we know the TV on: one attempt was enough. Idle (no timers) until the Wi-Fi changes.
                     setState(WatchState.AWAY, "Not on home Wi-Fi ($fp): TV not found, not retrying")
                     return

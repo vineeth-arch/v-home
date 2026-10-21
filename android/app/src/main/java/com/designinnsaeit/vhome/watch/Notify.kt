@@ -29,7 +29,7 @@ object Notify {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = Notification.Builder(ctx, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setSmallIcon(R.drawable.ic_stat_watch)
             .setContentTitle(ctx.getString(R.string.tap_to_start))
             .setContentIntent(open)
             .setAutoCancel(true)

@@ -8,7 +8,7 @@
         <item name="android:colorAccent">@color/blue</item>
         <item name="android:colorControlActivated">@color/blue</item>
         <item name="android:textColorPrimary">@color/ink</item>
-        <item name="android:textColorSecondary">@color/grey</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
         <item name="android:textColorHighlight">#331D3FBF</item>
         <item name="android:fontFamily">sans-serif</item>
     </style>
@@ -30,7 +30,7 @@
     </style>
     <style name="T.Dim">
         <item name="android:textSize">15sp</item>
-        <item name="android:textColor">@color/grey</item>
+        <item name="android:textColor">@color/text_dim</item>
         <item name="android:lineSpacingMultiplier">1.4</item>
     </style>
     <style name="T.Small">
@@ -80,6 +80,10 @@
     <style name="Btn.Primary">
         <item name="android:background">@drawable/btn_primary</item>
         <item name="android:textColor">@color/on_colour</item>
+        <!-- ink on spec red is ~3.4:1: passes only as large text (>=18sp bold) -->
+        <item name="android:textSize">18sp</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">bold</item>
     </style>
     <style name="Btn.Ghost">
         <item name="android:background">@drawable/btn_ghost</item>
