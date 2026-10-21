@@ -39,6 +39,7 @@ class WatcherService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
+        EventLog.add(this, "service start (${action ?: "watch"}; loop ${if (loop == null) "new" else "running"})")
         if (loop == null && action in SETTINGS_ACTIONS) {
             // From the settings screen while not watching: the activity already saved Prefs. Don't start watching.
             stopSelf(startId)
@@ -53,7 +54,17 @@ class WatcherService : Service() {
         }
         if (loop == null) {
             registerWifiCallback()
-            loop = scope.launch { mainLoop() }
+            loop = scope.launch {
+                try {
+                    mainLoop()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Never die silently: the log is how the owner (and we) find out what broke.
+                    setLine("Watcher crashed: ${e.javaClass.simpleName}: ${e.message}")
+                    stopSelf()
+                }
+            }
         }
         return START_NOT_STICKY
     }
@@ -77,6 +88,7 @@ class WatcherService : Service() {
     }
 
     private fun setLine(s: String) {
+        EventLog.add(this, s)
         line = s
         getSharedPreferences(Notify.STATUS_PREFS, MODE_PRIVATE).edit().putString("line", s).apply()
         notifyUpdate(Prefs.load(this).paused)
@@ -137,14 +149,23 @@ class WatcherService : Service() {
             var cfg = Prefs.load(this)
             val pin = cfg.pin
             val key = cfg.clientKey
-            if (pin == null || key == null) { stopSelf(); return }
+            if (pin == null || key == null) { setLine("Not paired: open the app and tap Pair"); stopSelf(); return }
             val network = HomeNetwork.wifiNetwork(this)
-            if (network == null) { stopSelf(); return }
+            if (network == null) { setLine("Not on Wi-Fi: stopped"); stopSelf(); return }
             activeNetwork = network
+            setLine("Looking for TV (last known ${cfg.host ?: "none"})")
             val host = Discovery.findTv(
                 cfg.host, pin,
-                probe = { probePin(it, network.socketFactory) },
-                ssdp = { Discovery.ssdpSearch(this, network) },
+                probe = { h ->
+                    probePin(h, network.socketFactory).also {
+                        EventLog.add(this, "probe $h: " + when {
+                            it == null -> "no answer on port $PORT"
+                            it.equals(pin, ignoreCase = true) -> "certificate matches"
+                            else -> "different certificate"
+                        })
+                    }
+                },
+                ssdp = { Discovery.ssdpSearch(this, network).also { EventLog.add(this, "network search found: $it") } },
             )
             if (host == null) {
                 setLine("TV not found (off or not home)")
@@ -158,12 +179,15 @@ class WatcherService : Service() {
             if (cfg.paused && !watcher.paused) watcher.pause("paused by user")
             else if (!cfg.paused && watcher.paused) watcher.resume()
             try {
+                setLine("Connecting to TV at $host")
                 client.open()
+                EventLog.add(this, "connected; subscribing to TV events")
                 val r = Runner(
                     watcher, client,
                     persistPaused = { p -> Prefs.save(this, Prefs.load(this).copy(paused = p)); notifyUpdate(p) },
                     clock = { SystemClock.elapsedRealtime() / 1000.0 },
                     status = ::setLine,
+                    log = { EventLog.add(this, it) },
                 )
                 runner = r
                 r.session()
@@ -177,7 +201,7 @@ class WatcherService : Service() {
             } catch (e: PinMismatch) {
                 setLine("TV certificate does not match the pin")
             } catch (e: Exception) {
-                setLine("Connection lost: ${e.message ?: e.javaClass.simpleName}")
+                setLine("Connection lost: ${e.javaClass.simpleName}: ${e.message}")
             } finally {
                 runner = null
                 client.close()

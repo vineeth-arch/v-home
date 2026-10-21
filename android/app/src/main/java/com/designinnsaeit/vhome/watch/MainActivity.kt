@@ -2,6 +2,9 @@ package com.designinnsaeit.vhome.watch
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -35,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var batteryText: TextView
     private lateinit var notifText: TextView
     private lateinit var notifButton: Button
+    private lateinit var logText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +73,11 @@ class MainActivity : Activity() {
         }
         notifButton.setOnClickListener { requestNotifications() }
         pauseToggle.setOnClickListener { togglePause() }
+        logText = findViewById(R.id.logText)
+        findViewById<Button>(R.id.startButton).setOnClickListener { startWatchingIfReady(fromButton = true) }
+        findViewById<Button>(R.id.testButton).setOnClickListener { testTv() }
+        findViewById<Button>(R.id.copyLogButton).setOnClickListener { copyLog() }
+        findViewById<Button>(R.id.refreshLogButton).setOnClickListener { refreshLog() }
 
         if (Build.VERSION.SDK_INT < 33) {
             notifText.visibility = View.GONE
@@ -83,16 +92,67 @@ class MainActivity : Activity() {
      * already on home Wi-Fi must start watching itself. A visible activity may start a foreground service;
      * repeat starts are harmless (the service runs its loop once).
      */
-    private fun startWatchingIfReady() {
-        if (Prefs.load(this).pin == null || HomeNetwork.wifiNetwork(this) == null) return
+    private fun startWatchingIfReady(fromButton: Boolean = false) {
+        val why = when {
+            Prefs.load(this).pin == null -> "not paired yet"
+            HomeNetwork.wifiNetwork(this) == null -> "phone not on Wi-Fi"
+            else -> null
+        }
+        if (why != null) {
+            if (fromButton) EventLog.add(this, "Start watching skipped: $why")
+            refreshLog()
+            return
+        }
         runCatching { startForegroundService(Intent(this, WatcherService::class.java)) }
+            .onFailure { EventLog.add(this, "could not start watcher: ${it.javaClass.simpleName}: ${it.message}") }
+        refreshLog()
+    }
+
+    private fun refreshLog() {
+        val log = EventLog.read(this)
+        logText.text = log.ifEmpty { getString(R.string.log_empty) }
+        status.text = getSharedPreferences(Notify.STATUS_PREFS, MODE_PRIVATE)
+            .getString("line", null) ?: getString(R.string.status_default)
+    }
+
+    private fun copyLog() {
+        val c = Prefs.load(this)
+        val header = "V/HOME Watcher ${packageManager.getPackageInfo(packageName, 0).versionName} · " +
+            "Android ${Build.VERSION.RELEASE} (${Build.MANUFACTURER} ${Build.MODEL}) · host ${c.host} · " +
+            "paired ${c.pin != null} · paused ${c.paused} · home ids ${c.homeIds}\n"
+        getSystemService(ClipboardManager::class.java)
+            .setPrimaryClip(ClipData.newPlainText("V/HOME log", header + EventLog.read(this)))
+        Toast.makeText(this, R.string.log_copied, Toast.LENGTH_SHORT).show()
+    }
+
+    /** Probe the saved TV on this Wi-Fi and say plainly whether it answers and is the paired one. */
+    private fun testTv() {
+        val c = Prefs.load(this)
+        val host = hostField.text.toString().trim().ifEmpty { c.host ?: "" }
+        val pin = c.pin
+        val network = HomeNetwork.wifiNetwork(this)
+        when {
+            pin == null -> { pairStatus.setText(R.string.test_not_paired); return }
+            network == null -> { pairStatus.setText(R.string.test_no_wifi); return }
+            host.isEmpty() -> { pairStatus.setText(R.string.need_ip); return }
+        }
+        pairStatus.setText(R.string.testing)
+        scope.launch {
+            val got = withContext(Dispatchers.IO) { probePin(host, network!!.socketFactory) }
+            val msg = when {
+                got == null -> getString(R.string.test_no_answer, host)
+                got.equals(pin, ignoreCase = true) -> getString(R.string.test_match, host)
+                else -> getString(R.string.test_mismatch, host)
+            }
+            pairStatus.text = msg
+            EventLog.add(this@MainActivity, "Test TV: $msg")
+            refreshLog()
+        }
     }
 
     override fun onResume() {
         super.onResume()
         startWatchingIfReady()
-        status.text = getSharedPreferences(Notify.STATUS_PREFS, MODE_PRIVATE)
-            .getString("line", null) ?: getString(R.string.status_default)
         refreshPause()
         val unrestricted = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
         batteryText.setText(if (unrestricted) R.string.battery_ok else R.string.battery_restricted)

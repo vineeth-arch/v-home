@@ -18,6 +18,7 @@ class Runner(
     private val watcher: Watcher, private val session: TvSession,
     private val persistPaused: (Boolean) -> Unit, private val clock: () -> Double,
     private val status: (String) -> Unit = {},
+    private val log: (String) -> Unit = {},
     private val retryDelayMs: Long = 2_000, private val retryWindowMs: Long = 8_000,
 ) {
     private val lock = Any() // watcher is single-threaded; nothing suspends while it is held
@@ -78,6 +79,7 @@ class Runner(
                 val s = p.optString("state").ifEmpty { null } ?: return@collect
                 val was = power
                 power = s
+                if (s != was) log("TV power: $s")
                 if (s == "Active" && was != "Active") {
                     apply(locked { watcher.onPowerActive(clock()) })
                     scope?.launch { wakeCheck() }
@@ -130,7 +132,7 @@ class Runner(
 
     private fun apply(actions: List<Action>) {
         for (a in actions) when (a) {
-            is Action.Log -> if (a.level == Level.WARNING || a.level == Level.ERROR) status(a.text)
+            is Action.Log -> if (a.level == Level.WARNING || a.level == Level.ERROR) status(a.text) else log(a.text)
             is Action.Pause -> { persistPaused(true); status("Paused") }
             is Action.Launch -> scope?.launch { launchWithRetry(a) }
         }
