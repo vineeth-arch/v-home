@@ -29,3 +29,24 @@ TV: LG 43NU885BPLA, firmware 43.04.26, webOS SDK 11.0.1. Installed as `com.desig
 | Installed-app list on the Apps screen (`listLaunchPoints` from the web app) | NOT VERIFIED | built 2026-09-30; falls back to the curated list if denied |
 | Studio (business numbers) end to end | VERIFIED locally only | local fixtures 2026-09-30: sync, throttle, failed source kept as stale, names hidden until enabled, TV start screen; cloud needs Vineeth's read-only roles and secrets (docs/STUDIO.md) |
 | Volume, mute, picture controls | NOT SUPPORTED in UI | hidden until verified |
+
+## V/HOME 2.0 (2026-10-21) — desktop-tested vs TV-verified
+
+Nothing below has been run on the TV yet (TV was off). "Desktop" = automated tests and the 1920x1080 desktop preview.
+
+| Capability | Desktop | TV |
+|---|---|---|
+| Launcher opens first; works unpaired and offline | tested (shell tests, preview) | NOT VERIFIED (gate H3) |
+| Remote focus on launcher grid, Settings scroll, Back → launcher, exit dialog | tested (preview + tests) | NOT VERIFIED |
+| Layout editor: favorites, order, hide, folders, Save/Cancel | tested (preview + tests) | NOT VERIFIED |
+| Layout + pairing survive `install-tv.sh` upgrade | n/a | NOT VERIFIED (gate H2) |
+| Bundled catalog + icons from `tv-catalog/` | tested (build with sample catalog) | NOT VERIFIED |
+| Companion pairing (wss:3001, unsigned manifest, cert pin) | tested with local fake TLS server | NOT VERIFIED (gate H0) |
+| LG Home app id on firmware 43.04.26 | n/a | UNKNOWN until `diag --observe` |
+| Home button → V/HOME redirect | state machine tested | NOT VERIFIED (gate H1: 20 trials) |
+| Breakers, pause/resume, reconnect | tested | NOT VERIFIED (gates H5, H6) |
+| `listLaunchPoints` from the web app | n/a | NOT VERIFIED (reported denied on some webOS versions) |
+| App and HDMI launch ids | n/a | NOT VERIFIED |
+| Timer schedule/status/cancel; handoff never shows a countdown | existing tests green | NOT VERIFIED (gate H4) |
+
+Checklists H0–H6: [COMPANION.md](COMPANION.md).
