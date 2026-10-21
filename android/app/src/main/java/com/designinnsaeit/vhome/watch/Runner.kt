@@ -12,6 +12,8 @@ private val POWER_OFF = setOf("Active Standby", "Suspend", "Power Off")
 private val WAKE_CHECK_GAPS_MS = listOf(0L, 3_000L, 7_000L) // checks at 0 s, 3 s, 10 s after wake
 
 private const val CLOSE_URI = "ssap://system.launcher/close"
+/** What this TV opens by itself at power-on (seen in the Mac log). Redirected only at switch-on. */
+private val BOOT_APPS = setOf("com.webos.app.livetv", "com.webos.app.lgchannels")
 private const val STUCK_CHECK_MS = 3_000L
 
 class WakeCheckFailed(msg: String) : Exception(msg)
@@ -23,7 +25,10 @@ class Runner(
     private val status: (String) -> Unit = {},
     private val log: (String) -> Unit = {},
     private val retryDelayMs: Long = 2_000, private val retryWindowMs: Long = 8_000,
+    /** True when this connection follows the TV being unreachable, i.e. the TV was just switched on. */
+    private val bootSession: Boolean = false,
 ) {
+    private var firstEvent = true
     private val lock = Any() // watcher is single-threaded; nothing suspends while it is held
     @Volatile private var power: String? = null
     @Volatile private var scope: CoroutineScope? = null
@@ -39,7 +44,13 @@ class Runner(
             try {
                 session.subscribe(FG_URI).collect { p ->
                     val app = extractAppId(p)
-                    if (app in watcher.homeIds && power in POWER_OFF) {
+                    val boot = bootSession && firstEvent
+                    firstEvent = false
+                    if (boot && app in BOOT_APPS) {
+                        // Switched on into Live TV / LG Channels: open V/HOME once, as if Home had been pressed.
+                        log("TV switched on into $app: opening V/HOME")
+                        apply(locked { watcher.onForeground(watcher.homeIds.first(), clock()) })
+                    } else if (app in watcher.homeIds && power in POWER_OFF) {
                         status("Home ignored while TV power is $power")
                     } else {
                         apply(locked { watcher.onForeground(app, clock()) })
@@ -188,8 +199,14 @@ class Runner(
     }
 }
 
-/** Reconnect delay in seconds: 5 * 2^attempt, capped at 300, +-20% jitter, never above the cap. */
+/**
+ * Reconnect delay in seconds: 5, 10, then 15, +-20% jitter, never above the cap. Short on purpose: the
+ * phone must notice the TV switching on within seconds to open V/HOME at power-on. Only runs on home
+ * Wi-Fi; Doze still stretches it when the phone is idle.
+ */
 fun backoff(attempt: Int, rand: () -> Double = Math::random): Double {
-    val base = minOf(300.0, 5.0 * (1L shl attempt.coerceIn(0, 10)))
-    return minOf(300.0, base * (1 + (rand() * 2 - 1) * 0.2))
+    val base = minOf(BACKOFF_CAP_S, 5.0 * (1L shl attempt.coerceIn(0, 10)))
+    return minOf(BACKOFF_CAP_S, base * (1 + (rand() * 2 - 1) * 0.2))
 }
+
+const val BACKOFF_CAP_S = 15.0

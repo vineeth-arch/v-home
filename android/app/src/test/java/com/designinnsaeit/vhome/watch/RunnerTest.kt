@@ -64,11 +64,11 @@ private fun fgOf(app: String) = JSONObject().put("appId", app)
 private fun powerOf(state: String) = JSONObject().put("state", state)
 
 @OptIn(ExperimentalCoroutinesApi::class)
-private class Rig(val t: TestScope) {
+private class Rig(val t: TestScope, boot: Boolean = false) {
     val session = FakeSession(t)
     val watcher = Watcher(VH, listOf(HOME))
     val persisted = mutableListOf<Boolean>()
-    val runner = Runner(watcher, session, { persisted += it }, { t.currentTime / 1000.0 })
+    val runner = Runner(watcher, session, { persisted += it }, { t.currentTime / 1000.0 }, bootSession = boot)
 
     fun start() {
         t.backgroundScope.launch { runner.session() }
@@ -159,9 +159,34 @@ class RunnerTest {
         assertEquals("", r.extractAppId(JSONObject()))
     }
 
-    @Test fun backoffCapsAt300() {
-        assertTrue(backoff(30) { 1.0 } <= 300.0)
-        assertTrue(backoff(30) { 0.0 } <= 300.0)
+    @Test fun backoffCapsAt15() {
+        assertTrue(backoff(30) { 1.0 } <= 15.0)
+        assertEquals(15.0, backoff(30) { 0.5 }, 1e-9)
+    }
+
+    @Test fun switchOnIntoLiveTvOpensVhome() = runTest {
+        val r = Rig(this, boot = true); r.start()
+        r.fg("com.webos.app.livetv")
+        assertEquals(1, r.session.launchTimes.size)
+    }
+
+    @Test fun switchOnIntoLgChannelsOpensVhome() = runTest {
+        val r = Rig(this, boot = true); r.start()
+        r.fg("com.webos.app.lgchannels")
+        assertEquals(1, r.session.launchTimes.size)
+    }
+
+    @Test fun liveTvLeftAloneWhenNotSwitchOn() = runTest {
+        val r = Rig(this, boot = false); r.start()
+        r.fg("com.webos.app.livetv") // e.g. phone just got home while someone watches Live TV
+        assertTrue(r.session.launchTimes.isEmpty())
+    }
+
+    @Test fun liveTvLaterInBootSessionLeftAlone() = runTest {
+        val r = Rig(this, boot = true); r.start()
+        r.fg("youtube.leanback.v4") // first screen after switch-on wasn't a boot app
+        r.fg("com.webos.app.livetv") // user chose Live TV themselves
+        assertTrue(r.session.launchTimes.isEmpty())
     }
 
     @Test fun wakeRedirectsWhenBootedIntoHome() = runTest {

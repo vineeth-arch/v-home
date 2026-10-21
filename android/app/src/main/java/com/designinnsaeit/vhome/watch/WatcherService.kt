@@ -27,6 +27,8 @@ class WatcherService : Service() {
     @Volatile private var runner: Runner? = null
     @Volatile private var watcher: Watcher? = null
     @Volatile private var rearm = true
+    private var tvOffSince: Long? = null   // elapsedRealtime when the TV first stopped answering
+    private var lastSearchAt = 0L
     @Volatile private var line = "Starting"
     private var activeNetwork: Network? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
@@ -171,9 +173,15 @@ class WatcherService : Service() {
                         })
                     }
                 },
-                ssdp = { Discovery.ssdpSearch(this, network).also { EventLog.add(this, "network search found: $it") } },
+                ssdp = {
+                    // The saved IP is retried every few seconds; a full network search (multicast) at most every 2 min.
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastSearchAt < 120_000) emptyList()
+                    else { lastSearchAt = now; Discovery.ssdpSearch(this, network).also { EventLog.add(this, "network search found: $it") } }
+                },
             )
             if (host == null) {
+                if (tvOffSince == null) tvOffSince = SystemClock.elapsedRealtime()
                 setLine("TV not found (off or not home)")
                 delay((backoff(attempt++) * 1000).toLong())
                 continue
@@ -187,13 +195,17 @@ class WatcherService : Service() {
             try {
                 setLine("Connecting to TV at $host")
                 client.open()
-                EventLog.add(this, "connected; subscribing to TV events")
+                // TV unreachable for 20 s+ and now answering = it was just switched on (not a phone-side blip).
+                val boot = tvOffSince?.let { SystemClock.elapsedRealtime() - it >= 20_000 } == true
+                tvOffSince = null
+                EventLog.add(this, "connected; subscribing to TV events" + if (boot) " (TV was off: switch-on)" else "")
                 val r = Runner(
                     watcher, client,
                     persistPaused = { p -> Prefs.save(this, Prefs.load(this).copy(paused = p)); notifyUpdate(p) },
                     clock = { SystemClock.elapsedRealtime() / 1000.0 },
                     status = ::setLine,
                     log = { EventLog.add(this, it) },
+                    bootSession = boot,
                 )
                 runner = r
                 r.session()
@@ -207,6 +219,8 @@ class WatcherService : Service() {
             } catch (e: PinMismatch) {
                 setLine("TV certificate does not match the pin")
             } catch (e: Exception) {
+                // Could not connect at all (vs. a session that ran): the TV may be booting or off.
+                if (runner == null && tvOffSince == null) tvOffSince = started
                 setLine("Connection lost: ${e.javaClass.simpleName}: ${e.message}")
             } finally {
                 runner = null
