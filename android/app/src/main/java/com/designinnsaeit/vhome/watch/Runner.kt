@@ -27,6 +27,8 @@ class Runner(
     private val retryDelayMs: Long = 2_000, private val retryWindowMs: Long = 8_000,
     /** True when this connection follows the TV being unreachable, i.e. the TV was just switched on. */
     private val bootSession: Boolean = false,
+    /** Called once per confirmed redirect with its latency in seconds. */
+    private val onRedirect: (Double) -> Unit = {},
 ) {
     private var firstEvent = true
     private val lock = Any() // watcher is single-threaded; nothing suspends while it is held
@@ -155,7 +157,7 @@ class Runner(
         val s = locked { watcher.snapshot() }
         if (s.ok > okSeen) {
             okSeen = s.ok
-            s.lastLatencyS?.let { status(String.format(Locale.US, "Watching · last redirect %.2f s", it)) }
+            s.lastLatencyS?.let { onRedirect(it); status(String.format(Locale.US, "Watching · last redirect %.2f s", it)) }
         }
     }
 

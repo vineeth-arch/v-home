@@ -6,7 +6,6 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 
 /**
@@ -19,12 +18,7 @@ class WifiJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         if (Prefs.load(this).pin == null) return false
         EventLog.add(this, "Wi-Fi job: on Wi-Fi, starting watcher")
-        try {
-            startForegroundService(Intent(this, WatcherService::class.java))
-        } catch (e: IllegalStateException) {
-            EventLog.add(this, "Android blocked background start (${e.javaClass.simpleName}); posted Tap to start")
-            Notify.tapToStart(this)
-        }
+        startWatcher(this, "Wi-Fi job")
         return false
     }
 
@@ -40,6 +34,30 @@ class WifiJob : JobService() {
             else b.setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED)
             runCatching { ctx.getSystemService(JobScheduler::class.java).schedule(b.build()) }
                 .onFailure { EventLog.add(ctx, "could not arm Wi-Fi job: ${it.message}") }
+        }
+    }
+}
+
+/** Safety net: every 15 min, if paired and the service is gone (killed, swiped, never restarted), start it. */
+class WatchdogJob : JobService() {
+    override fun onStartJob(params: JobParameters): Boolean {
+        if (Prefs.load(this).pin != null && !WatcherService.running) {
+            EventLog.add(this, "watchdog: service not running, starting it")
+            startWatcher(this, "watchdog")
+        }
+        return false
+    }
+
+    override fun onStopJob(params: JobParameters): Boolean = false
+
+    companion object {
+        private const val ID = 7002
+
+        fun arm(ctx: Context) {
+            val b = JobInfo.Builder(ID, ComponentName(ctx, WatchdogJob::class.java))
+                .setPersisted(true).setPeriodic(15 * 60_000L)
+            runCatching { ctx.getSystemService(JobScheduler::class.java).schedule(b.build()) }
+                .onFailure { EventLog.add(ctx, "could not arm watchdog job: ${it.message}") }
         }
     }
 }
