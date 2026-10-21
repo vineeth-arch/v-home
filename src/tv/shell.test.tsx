@@ -63,3 +63,11 @@ test('unpaired live: launcher and Settings render, Our Home shows the pairing ca
   click('Home')
   expect(host.querySelector('[data-testid=launcher]')).not.toBeNull()
 })
+
+test('navHidesTimerLineOnLauncher', async () => {
+  await mount()
+  expect(host.querySelector('[data-testid=launcher]')).not.toBeNull()
+  expect(host.querySelector('.timer-line')).toBeNull()
+  click('Our Home')
+  expect(host.querySelector('.timer-line')).not.toBeNull()
+})
