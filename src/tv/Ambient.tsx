@@ -40,7 +40,9 @@ export function Ambient({ onClose }: { onClose: () => void }) {
   const { snap, now, tz, guest, weather, images, platform } = useApp()
   useNoScreensaver(platform)
   useEffect(() => {
-    const close = (e: Event) => { e.preventDefault(); e.stopImmediatePropagation(); onClose() }
+    // The OK press that opened the frame also yields the button's native click; ignore input for a moment so it can't close it again.
+    const openedAt = Date.now()
+    const close = (e: Event) => { if (Date.now() - openedAt < 400) return; e.preventDefault(); e.stopImmediatePropagation(); onClose() }
     addEventListener('keydown', close, true); addEventListener('click', close, true)
     return () => { removeEventListener('keydown', close, true); removeEventListener('click', close, true) }
   }, [onClose])
