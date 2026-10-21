@@ -10,20 +10,21 @@ Anything marked **not yet checked on the TV** works in tests or the desktop prev
 2. [Using the remote](#using-the-remote)
 3. [The Home screen (launcher)](#the-home-screen-launcher)
 4. [Editing your layout and folders](#editing-your-layout-and-folders)
-5. [Sleep timer](#sleep-timer)
-6. [Home button on the TV (Mac helper)](#home-button-on-the-tv-mac-helper)
-7. [Our Home](#our-home)
-8. [Watch Together](#watch-together)
-9. [Us and Idea Wall](#us-and-idea-wall)
-10. [Studio (business numbers)](#studio-business-numbers)
-11. [Photo frame](#photo-frame)
-12. [Quick controls, guest view and modes](#quick-controls-guest-view-and-modes)
-13. [Settings on the TV](#settings-on-the-tv)
-14. [The phone app](#the-phone-app)
-15. [Pairing the TV with the phone](#pairing-the-tv-with-the-phone)
-16. [Troubleshooting](#troubleshooting)
-17. [All features at a glance](#all-features-at-a-glance)
-18. [Limits to know about](#limits-to-know-about)
+5. [Photos on the Home screen](#photos-on-the-home-screen)
+6. [Sleep timer](#sleep-timer)
+7. [Home button on the TV (Mac helper)](#home-button-on-the-tv-mac-helper)
+8. [Our Home](#our-home)
+9. [Watch Together](#watch-together)
+10. [Us and Idea Wall](#us-and-idea-wall)
+11. [Studio (business numbers)](#studio-business-numbers)
+12. [Photo frame](#photo-frame)
+13. [Quick controls, guest view and modes](#quick-controls-guest-view-and-modes)
+14. [Settings on the TV](#settings-on-the-tv)
+15. [The phone app](#the-phone-app)
+16. [Pairing the TV with the phone](#pairing-the-tv-with-the-phone)
+17. [Troubleshooting](#troubleshooting)
+18. [All features at a glance](#all-features-at-a-glance)
+19. [Limits to know about](#limits-to-know-about)
 
 ## Quick start
 
@@ -46,7 +47,7 @@ From top to bottom:
 
 - **Header:** time and date, a greeting, weather (once a location is set on the phone), the mode chip (Auto, Home, Morning, Evening) and Quick controls.
 - **Personal card:** one short reflection or shared note. It is hidden when nobody is paired and in guest view.
-- **Favorites:** up to 10 apps or inputs you chose, 5 per row. Netflix, YouTube, Prime Video, JioHotstar, Apple TV and so on.
+- **Favorites:** up to 9 apps or inputs you chose, in a 3x3 grid with a photo card to their right. Netflix, YouTube, Prime Video, JioHotstar, Apple TV and so on.
 - **Folders:** groups of apps you made. Each shows a 2 by 2 preview and how many apps it holds. Press OK to open one.
 - **More apps:** every other app on the TV. Apps already in Favorites are not repeated here.
 - **Inputs:** HDMI inputs, at the bottom. Scroll down to reach them.
@@ -86,11 +87,15 @@ Open **Edit** (small button beside the Favorites heading), or Settings, Home scr
 2. **New folder** and **Rename** open an on-screen keyboard: arrows move over the letters, OK types, **Space**, **Delete**, **Clear**, **Done**. The first letter of each word is capitalised for you. Leaving the name empty gives a default name (Streaming, Music, Kids, and so on). **Delete** removes the folder and returns its apps to the grid.
 3. **Save** keeps your changes. **Cancel** or Back throws them away.
 
-Favorites hold up to 10. Your layout lives on this TV only; the phone does not change it. On first run, favorites are copied once from the apps pinned on the phone.
+Favorites hold up to 9, in a 3x3 grid with a photo card to their right. Your layout lives on this TV only; the phone does not change it. On first run, favorites are copied once from the apps pinned on the phone.
 
 ### Wallpaper and motion
 
 Settings, Home screen: pick one of five wallpapers (Dusk, Ocean, Forest, Ember, Graphite). They are still pictures, never animated. **Reduced motion** turns off the focus animation.
+
+## Photos on the Home screen
+
+A photo card sits to the right of your favorites. To add, remove or caption its photos, open the Photos tab in the phone app and tick Show on TV. The TV picks up changes within 15 minutes, or at once when you reopen V/HOME. The card changes photo every 45 seconds. Press OK on the card to open the full photo frame. Guests do not see the card.
 
 ## Sleep timer
 
@@ -242,7 +247,7 @@ Launcher
 - Built-in Help screen (Settings or Quick controls)
 - Opens without pairing, internet or the Mac helper
 - Colour-matched icon tiles, full scrolling app list, inputs at the bottom
-- Up to 10 favorites, folders with previews, hide, reorder, greyed missing apps
+- Up to 9 favorites in a 3x3 grid with a photo card, folders with previews, hide, reorder, greyed missing apps
 - Five wallpapers, reduced motion, remembers where you were when you return from an app
 - Real app list and icons taken from your own TV; new apps are found automatically, with an optional one-command (or fully automatic) refresh
 - Back asks before leaving

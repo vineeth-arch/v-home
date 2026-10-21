@@ -50,7 +50,7 @@ export function Nav() {
   return (
     <div className="nav">
       {(studioOn ? [...NAV, { id: 'studio' as const, label: 'Studio' }] : NAV).map((n) => <Btn key={n.id} id={`nav-${n.id}`} className={screen === n.id ? 'cur' : ''} onClick={() => go(n.id)}>{n.label}</Btn>)}
-      <span className="timer-line">{line}</span>
+      {screen !== 'launcher' && <span className="timer-line">{line}</span>}{/* Home shows its own timer panel */}
     </div>
   )
 }

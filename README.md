@@ -10,7 +10,7 @@ An ad-free launcher and shared household dashboard for an LG webOS TV, with a ph
 
 ## What it does
 
-- **Launcher:** colour-matched app tiles, up to 10 favorites you can reorder, folders you name with an on-screen keyboard, hold OK on an app to edit it, a full scrolling app list, HDMI inputs at the bottom, five wallpapers, a built-in Help screen. Opens without pairing, internet or the Mac helper. App list and icons come from your own TV.
+- **Launcher:** colour-matched app tiles, up to 9 favorites in a 3x3 grid with a photo card, which you can reorder, folders you name with an on-screen keyboard, hold OK on an app to edit it, a full scrolling app list, HDMI inputs at the bottom, five wallpapers, a built-in Help screen. Opens without pairing, internet or the Mac helper. App list and icons come from your own TV.
 - **One-click sleep timer** (15, 30, 45, 60, 90 min, Cancel) on the right of the Home screen. V/TV Sleep stays the only thing that turns the TV off; it confirms each request and returns you to V/HOME, and Check timer asks it for the true state.
 - **Home button:** a Mac helper watches the foreground app and reopens V/HOME when LG Home appears. Pause and resume any time, with automatic safety limits.
 - **Household:** Our Home (morning and evening rituals, reflections, plans, notes), Watch Together, Us, Idea Wall, photo frame, guest view, weather, and Studio business numbers in work hours.

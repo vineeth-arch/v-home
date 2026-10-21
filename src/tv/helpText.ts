@@ -9,7 +9,7 @@ export const HELP: HelpTopic[] = [
     'Hold OK on an app to edit it.',
   ] },
   { id: 'home', title: 'The Home screen', lines: [
-    'Favorites (up to 10) sit at the top, then your folders, then every other app. HDMI inputs are at the bottom: scroll down.',
+    'Favorites (up to 9, in a 3x3 grid with a photo card to their right) sit at the top, then your folders, then every other app. HDMI inputs are at the bottom: scroll down.',
     'Each tile takes the colour of the app icon.',
     'An app greyed out as "Not on this TV" was uninstalled. Your layout keeps its place.',
   ] },
