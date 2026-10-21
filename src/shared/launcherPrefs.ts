@@ -4,7 +4,7 @@ import type { CatalogEntry } from './catalog'
 import { isValidAppId } from './apps'
 
 export const LAUNCHER_KEY = 'vhomeLauncher.v1'
-export const MAX_FAVORITES = 10
+export const MAX_FAVORITES = 9
 export const WALLPAPERS = ['dusk', 'ocean', 'forest', 'ember', 'graphite'] as const
 export interface Folder { id: string; name: string; apps: string[] }
 export interface LauncherPrefs {

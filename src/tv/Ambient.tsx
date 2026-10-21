@@ -3,6 +3,7 @@ import { useApp } from './state'
 import { fmtTime } from './ui'
 import { ambientQueue, type AmbientPhoto } from '../shared/ambient'
 import { localDate } from '../shared/daily'
+import type { Snapshot } from '../shared/model'
 import { pickDaily } from '../shared/reflections'
 import type { Platform } from '../adapters/platform'
 import './ambient.css'
@@ -25,6 +26,15 @@ function useNoScreensaver(platform: Platform) {
   }, [platform])
 }
 
+/** Photos the TV can show: moments plus dream/idea pictures that have a resolved image. None for guests. Shared with the Home photo card. */
+export function tvPhotos(snap: Snapshot, images: Record<string, string>, guest: boolean): AmbientPhoto[] {
+  return guest ? [] : [
+    ...snap.moments,
+    ...snap.dreams.filter((d) => d.imagePath).map((d) => ({ path: d.imagePath!, caption: d.title })),
+    ...snap.ideas.filter((i) => i.imagePath).map((i) => ({ path: i.imagePath!, caption: i.title })),
+  ].filter((p) => images[p.path])
+}
+
 /** Idle photo frame: photos marked Show on TV, a clock, the weather and one reflection. Any key or click closes it. */
 export function Ambient({ onClose }: { onClose: () => void }) {
   const { snap, now, tz, guest, weather, images, platform } = useApp()
@@ -36,11 +46,7 @@ export function Ambient({ onClose }: { onClose: () => void }) {
   }, [onClose])
 
   const today = localDate(now, tz)
-  const photos = useMemo((): AmbientPhoto[] => guest ? [] : [
-    ...snap.moments,
-    ...snap.dreams.filter((d) => d.imagePath).map((d) => ({ path: d.imagePath!, caption: d.title })),
-    ...snap.ideas.filter((i) => i.imagePath).map((i) => ({ path: i.imagePath!, caption: i.title })),
-  ].filter((p) => images[p.path]), [guest, snap.moments, snap.dreams, snap.ideas, images])
+  const photos = useMemo(() => tvPhotos(snap, images, guest), [snap, images, guest])
   const lastShown = useRef(new Map<string, number>())
   const queue = useMemo(() => ambientQueue(photos, today, lastShown.current), [photos, today])
 

@@ -11,6 +11,8 @@ import { applyLayout, MAX_FAVORITES, WALLPAPERS, type Folder } from '../shared/l
 import { bundledCatalog, iconUrl, type CatalogEntry } from '../shared/catalog'
 import { pickDaily } from '../shared/reflections'
 import { localDate } from '../shared/daily'
+import { ambientQueue } from '../shared/ambient'
+import { tvPhotos } from './Ambient'
 import { sharedNote } from '../shared/partnerNotes'
 
 // Ids match the shared WALLPAPERS list (WS-B); kept here so this file compiles on its own.
@@ -86,6 +88,28 @@ function PersonalCard() {
   </div>
 }
 
+/** Rotating photo card to the right of Favorites: photos marked Show on TV. OK opens the full photo frame. Hidden for guests. */
+function HomePhotos() {
+  const { snap, images, guest, now, tz, setOverlay } = useApp()
+  const photos = useMemo(() => tvPhotos(snap, images, guest), [snap, images, guest])
+  const today = localDate(now, tz)
+  const queue = useMemo(() => ambientQueue(photos, today), [photos, today])
+  const [idx, setIdx] = useState(0)
+  useEffect(() => {
+    if (queue.length < 2) return
+    const id = setInterval(() => setIdx((i) => i + 1), 45_000)
+    return () => clearInterval(id)
+  }, [queue.length])
+  if (guest) return null
+  const cur = queue.length ? queue[idx % queue.length] : undefined
+  return <Tile id="l-photos" className="l-photos" onClick={() => setOverlay('ambient')}>
+    {cur ? <>
+      <img key={cur.path} src={images[cur.path]} alt="" className="l-photo-img" />
+      <span className="l-photo-cap"><span className="ttl">{cur.caption ?? ''}</span><span>{(idx % queue.length) + 1} of {queue.length}</span></span>
+    </> : <span className="l-photo-empty">Add photos on your phone: Photos → Show on TV</span>}
+  </Tile>
+}
+
 const PRESETS = [15, 30, 45, 60, 90]
 /** Sleep-timer shortcuts, always on screen at the right. Uses the same adapter and honest messages as Quick controls. */
 function TimerPanel() {
@@ -102,7 +126,7 @@ function TimerPanel() {
     <Tile id="l-t-cancel" className="l-tbtn wide ghost" onClick={() => void run((a) => a.cancel())}>Cancel timer</Tile>
     {canCheckTimer && <Tile id="l-t-check" className="l-tbtn wide ghost" onClick={checkTimer}>Check timer</Tile>}
     {timerAt != null && <div className="l-tage">Confirmed by V/TV Sleep at {fmtTime(timerAt, tz)}</div>}
-    <div className={`l-tmsg${msg?.warn ? ' warn' : ''}`} role="status">{msg?.text ?? (verified ? '' : 'Not yet verified on this TV')}</div>
+    <div className={`l-tmsg${msg?.warn ? ' warn' : ''}`} role="status">{msg?.text ?? (verified || timerAt != null ? '' : 'Not yet verified on this TV')}</div>
   </aside>
 }
 
@@ -128,7 +152,7 @@ export function Launcher() {
   // decided once per mount: a changing `initial` re-registers tiles and steals focus mid-navigation
   const [saved] = useState(readFocus)
   const [initialId] = useState(() => (saved && order.includes(saved) ? saved : order[0]))
-  const dockSlots = Array.from({ length: Math.min(MAX_FAVORITES, Math.max(5, dock.length)) }, (_, i) => dock[i])
+  const dockSlots = Array.from({ length: MAX_FAVORITES }, (_, i) => dock[i])
   const folder = folders.find((f) => f.folder.id === openFolder)
 
   const scroller = useRef<HTMLDivElement>(null)
@@ -145,9 +169,12 @@ export function Launcher() {
       <PersonalCard />
       <section className="l-sec" data-first="1">
         <div className="l-h"><span>Favorites</span><span className="l-hint">Hold OK on an app to edit it</span><Tile id="l-edit" className="chip" onClick={() => { setEditStart(null); setEditing(true) }}>Edit</Tile></div>
-        <div className="l-grid">{dockSlots.map((e, i) => e
-          ? <AppTile key={e.id} entry={e} idPrefix="l-dock" onEdit={editApp} initial={`l-dock-${e.id}` === initialId} onOpen={open} />
-          : <div key={`s${i}`} className="l-slot" aria-hidden />)}</div>
+        <div className="l-favrow">
+          <div className="l-grid l-fav3">{dockSlots.map((e, i) => e
+            ? <AppTile key={e.id} entry={e} idPrefix="l-dock" onEdit={editApp} initial={`l-dock-${e.id}` === initialId} onOpen={open} />
+            : <div key={`s${i}`} className="l-slot" aria-hidden />)}</div>
+          <HomePhotos />
+        </div>
       </section>
       {folders.length > 0 && <section className="l-sec">
         <div className="l-h"><span>Folders</span><span className="l-count">{folders.length}</span></div>
