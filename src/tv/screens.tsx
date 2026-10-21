@@ -86,8 +86,6 @@ export function OurHome() {
             {mode === 'evening' && <Btn id="act-wind" initial className="primary" onClick={() => setOverlay('bedtime')}>Wind down together</Btn>}
             {(mode === 'home' || (mode === 'morning' && skipped)) && <Btn id="act-watch" initial className="primary" onClick={() => go('watch')}>Watch Together</Btn>}
             {mode === 'evening' && <Btn id="act-watch2" className="ghost" onClick={() => go('watch')}>Watch Together</Btn>}
-            <Btn id="act-us" className="ghost chip" onClick={() => go('us')}>Us</Btn>
-            <Btn id="act-ideas" className="ghost chip" onClick={() => go('ideas')}>Idea Wall</Btn>
             {!(mode === 'home' && dream) && <Btn id="act-next" className="ghost chip" onClick={() => setNextN((n) => n + 1)}>Next reflection</Btn>}
           </div>
         </div>
@@ -106,7 +104,9 @@ export function OurHome() {
       </div>}
     </div>
     <div className="strip">
-      {appsOf(snap).slice(0, 6).map((a) => <Btn key={a.id} id={`app-${a.id}`} onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}
+      <Btn id="strip-us" onClick={() => go('us')}>Us</Btn>
+      <Btn id="strip-ideas" onClick={() => go('ideas')}>Idea Wall</Btn>
+      {appsOf(snap).slice(0, 4).map((a) => <Btn key={a.id} id={`app-${a.id}`} onClick={() => void launch(a.id, a.label)}>{a.label}</Btn>)}
     </div>
   </>
 }

@@ -15,7 +15,9 @@ export function pickNext(boxes: Box[], currentId: string | null, dir: Dir): stri
     const o = center(b)
     const dx = o.cx - c.cx, dy = o.cy - c.cy
     const [main, cross] = dir === 'left' ? [-dx, dy] : dir === 'right' ? [dx, dy] : dir === 'up' ? [-dy, dx] : [dy, dx]
-    if (main <= 0) continue
+    // must lie beyond the current box's edge, so a neighbour shifted a few px (focus lift) is not "below"
+    const beyond = dir === 'left' ? o.cx < cur.x : dir === 'right' ? o.cx > cur.x + cur.w : dir === 'up' ? o.cy < cur.y : o.cy > cur.y + cur.h
+    if (main <= 0 || !beyond) continue
     const score = main + 2 * Math.abs(cross)
     if (!best || score < best.score) best = { id: b.id, score }
   }

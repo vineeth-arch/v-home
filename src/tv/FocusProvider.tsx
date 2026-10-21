@@ -15,6 +15,24 @@ export const useFocusCtx = () => useContext(FocusCtx)!
 export const EXIT_EVENT = 'vhome:exit-root'
 export const requestExit = () => window.dispatchEvent(new Event(EXIT_EVENT))
 
+const scrollerOf = (el: HTMLElement): HTMLElement | null => {
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY
+    if (oy === 'auto' || oy === 'scroll') return p
+  }
+  return null
+}
+/** Scrolls only the nearest overflow-y:auto/scroll list so `el` is visible. Never scrolls the page or
+ *  overflow:hidden boxes (scrollIntoView does, which can shift the whole 1920x1080 stage on the TV). */
+function revealInScroller(el: HTMLElement) {
+  const p = scrollerOf(el)
+  if (!p) return
+  const a = el.getBoundingClientRect(), b = p.getBoundingClientRect(), pad = 16
+  const k = p.offsetHeight ? b.height / p.offsetHeight : 1 // desktop preview scales the stage; TV k = 1
+  if (a.top < b.top) p.scrollTop -= (b.top - a.top) / k + pad
+  else if (a.bottom > b.bottom) p.scrollTop += (a.bottom - b.bottom) / k + pad
+}
+
 export function FocusProvider({ children, onExitRoot = requestExit }: { children: ReactNode; onExitRoot?: () => void }) {
   const els = useRef(new Map<string, Entry>())
   const stack = useRef(new BackStack())
@@ -27,7 +45,7 @@ export function FocusProvider({ children, onExitRoot = requestExit }: { children
     const el = els.current.get(id)?.el
     if (!el) return
     el.focus({ preventScroll: true })
-    if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    revealInScroller(el)
   }, [])
 
   const register = useCallback((id: string, el: HTMLElement, scope: string, initial: boolean) => {
@@ -49,13 +67,16 @@ export function FocusProvider({ children, onExitRoot = requestExit }: { children
   }, [focus])
 
   useEffect(() => {
-    const boxes = (): Box[] => {
+    // scroller=true: only targets in the focused element's scrolling list (so Down scrolls the list before leaving it)
+    const boxes = (scroller = false): Box[] => {
       const sc = stack.current.scope
-      return [...els.current].filter(([, e]) => e.scope === sc).map(([id, e]) => { const r = e.el.getBoundingClientRect(); return { id, x: r.x, y: r.y, w: r.width, h: r.height } })
+      const cur = els.current.get(focusedRef.current ?? '')?.el
+      const list = cur && scroller ? scrollerOf(cur) : null
+      return [...els.current].filter(([, e]) => e.scope === sc && (!list || list.contains(e.el) || e.el === cur)).map(([id, e]) => { const r = e.el.getBoundingClientRect(); return { id, x: r.x, y: r.y, w: r.width, h: r.height } })
     }
     const onKey = (e: KeyboardEvent) => {
       const dir = dirForKey(e.keyCode)
-      if (dir) { const n = pickNext(boxes(), focusedRef.current, dir); if (n) focus(n); e.preventDefault(); return }
+      if (dir) { const n = pickNext(boxes(true), focusedRef.current, dir) ?? pickNext(boxes(), focusedRef.current, dir); if (n) focus(n); e.preventDefault(); return }
       if (e.keyCode === 13) { els.current.get(focusedRef.current ?? '')?.el.click(); return }
       if (KEY_BACK.includes(e.keyCode)) {
         e.preventDefault()

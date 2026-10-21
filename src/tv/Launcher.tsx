@@ -19,8 +19,6 @@ const writeFocus = (id: string) => { try { sessionStorage.setItem(FOCUS_KEY, id)
 
 function Tile({ id, scope, initial, className = '', onClick, children }: { id: string; scope?: string; initial?: boolean; className?: string; onClick: () => void; children: ReactNode }) {
   const { className: fc, ref, ...fp } = useFocusable(id, { scope, initial })
-  const { focusedId } = useFocusCtx()
-  useEffect(() => { if (focusedId === id) (ref as { current: HTMLElement | null }).current?.scrollIntoView?.({ block: 'nearest' }) }, [focusedId, id, ref])
   return <button ref={ref} {...fp} className={`${fc} l-tile ${className}`} onClick={onClick}>{children}</button>
 }
 
@@ -80,8 +78,9 @@ export function Launcher() {
 
   const open = (e: CatalogEntry) => { if (!e.unavailable) void launch(e.id, e.title) }
   const order = [...dock.map((e) => `l-dock-${e.id}`), ...folders.map((f) => `l-folder-${f.folder.id}`), ...grid.map((e) => `l-app-${e.id}`), ...inputs.map((e) => `l-input-${e.id}`)]
-  const saved = readFocus()
-  const initialId = saved && order.includes(saved) ? saved : order[0]
+  // decided once per mount: a changing `initial` re-registers tiles and steals focus mid-navigation
+  const [saved] = useState(readFocus)
+  const [initialId] = useState(() => (saved && order.includes(saved) ? saved : order[0]))
   const dockSlots = Array.from({ length: MAX_FAVORITES }, (_, i) => dock[i])
   const folder = folders.find((f) => f.folder.id === openFolder)
 
@@ -138,7 +137,8 @@ export function Diagnostics() {
   const bySource = (['companion', 'tv', 'curated'] as const).map((s) => [s, catalog.filter((e) => e.source === s).length] as const).filter(([, n]) => n > 0)
   const system = catalog.filter((e) => e.system)
   const caps = Object.entries(capabilities)
-  return <div className="l-set">
+  const fp = useFocusable('set-diag') // focusable so the remote can scroll Settings down to this read-only panel
+  return <div {...fp} className={`${fp.className} l-set l-diag`}>
     <h3>Diagnostics</h3>
     <div className="small">Catalog: {catalog.length} entries{bySource.length ? ` (${bySource.map(([s, n]) => `${s} ${n}`).join(', ')})` : ''}. Generated: {generatedAt || 'unknown'}.</div>
     <div className="small dim">Hidden helpers: {system.length ? system.map((e) => e.title).join(', ') : 'none'}.</div>
