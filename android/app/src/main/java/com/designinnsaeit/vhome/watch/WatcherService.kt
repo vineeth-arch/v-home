@@ -34,6 +34,8 @@ class WatcherService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        EventLog.installCrashHandler(this)
+        EventLog.add(this, EventLog.header(this))
         Notify.ensureChannel(this)
     }
 

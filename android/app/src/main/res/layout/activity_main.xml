@@ -189,6 +189,21 @@
                 android:text="@string/refresh_log" />
         </LinearLayout>
 
+        <EditText
+            android:id="@+id/sinkField"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_sink"
+            android:importantForAutofill="no"
+            android:inputType="textUri"
+            android:singleLine="true" />
+
+        <Button
+            android:id="@+id/sendLogButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/send_log" />
+
         <TextView
             android:id="@+id/logText"
             android:layout_width="match_parent"

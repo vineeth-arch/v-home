@@ -42,6 +42,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EventLog.installCrashHandler(this)
         setContentView(R.layout.activity_main)
         HomeNetwork.register(this)
         Notify.ensureChannel(this)
@@ -78,6 +79,16 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.testButton).setOnClickListener { testTv() }
         findViewById<Button>(R.id.copyLogButton).setOnClickListener { copyLog() }
         findViewById<Button>(R.id.refreshLogButton).setOnClickListener { refreshLog() }
+        val sinkField = findViewById<EditText>(R.id.sinkField)
+        sinkField.setText(EventLog.sink(this))
+        findViewById<Button>(R.id.sendLogButton).setOnClickListener {
+            EventLog.setSink(this, sinkField.text.toString())
+            EventLog.sendFullDump(this) { ok ->
+                runOnUiThread {
+                    Toast.makeText(this, if (ok) R.string.log_sent else R.string.log_send_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
 
         if (Build.VERSION.SDK_INT < 33) {
             notifText.visibility = View.GONE

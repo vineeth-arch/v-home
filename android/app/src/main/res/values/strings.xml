@@ -43,5 +43,9 @@
     <string name="refresh_log">Refresh</string>
     <string name="log_copied">Log copied. Paste it to Claude.</string>
     <string name="log_empty">No events yet.</string>
+    <string name="hint_sink">Send logs to Mac (IP:port), empty = off</string>
+    <string name="send_log">Send full log to Mac</string>
+    <string name="log_sent">Full log sent to the Mac.</string>
+    <string name="log_send_failed">Could not reach the Mac. Is the log receiver running and the Mac on this Wi-Fi?</string>
     <string name="footer">Watching starts automatically when this phone joins home Wi-Fi.</string>
 </resources>
