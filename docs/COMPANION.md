@@ -42,7 +42,7 @@ While the Mac sleeps the watcher stops, so Home on the TV shows LG Home with no 
 
 ## Uninstall and rollback
 
-`companion/install.sh uninstall` removes the agent, the virtualenv and the package copy and keeps pairing, config and logs. `companion/install.sh uninstall --purge` removes the whole state directory. To roll back to plain LG behaviour at any time, run `pause` (instant, reversible) or `uninstall`. The TV side needs nothing: V/HOME stays installed as a normal app. You may also revoke the pairing from the TV's settings if you wish.
+`companion/install.sh uninstall` removes the agent, the virtualenv and the package copy and keeps pairing, config and logs. `companion/install.sh uninstall --purge` also deletes the pairing key, pinned certificate, config, state and logs (only its own files), then the folder if it is empty. To roll back to plain LG behaviour at any time, run `pause` (instant, reversible) or `uninstall`. The TV side needs nothing: V/HOME stays installed as a normal app. You may also revoke the pairing from the TV's settings if you wish.
 
 ## Troubleshooting
 
