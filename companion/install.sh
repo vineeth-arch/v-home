@@ -26,8 +26,9 @@ install() {
   # lets `venv/bin/python -m vhome_companion ...` work from any directory
   site="$("$STATE/venv/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
   printf '%s\n' "$STATE/app" > "$site/vhome_companion.pth"
-  sed -e "s|@PYTHON@|$STATE/venv/bin/python|g" -e "s|@STATE_DIR@|$STATE|g" \
-    "$SRC/launchd/$LABEL.plist" > "$AGENT"
+  # XML-escaped substitution (paths may contain & < > |)
+  "$py" -c 'import sys,html; t=open(sys.argv[1]).read(); e=lambda v: html.escape(v, quote=False); sys.stdout.write(t.replace("@PYTHON@", e(sys.argv[2])).replace("@STATE_DIR@", e(sys.argv[3])))' \
+    "$SRC/launchd/$LABEL.plist" "$STATE/venv/bin/python" "$STATE" > "$AGENT"
   launchctl_ bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   launchctl_ bootstrap "$DOMAIN" "$AGENT"
   echo "Installed. Python for manual commands: $STATE/venv/bin/python -m vhome_companion <cmd>"
@@ -39,7 +40,9 @@ uninstall() {
   rm -f "$AGENT"
   rm -rf "$STATE/venv" "$STATE/app"
   if [ "${1:-}" = "--purge" ]; then
-    rm -rf "$STATE"
+    # only our own files, so a mis-set VHOME_COMPANION_DIR can never wipe an unrelated folder
+    rm -f "$STATE"/client-key "$STATE"/cert.sha256 "$STATE"/config.json "$STATE"/state.json "$STATE"/paused "$STATE"/*.lock "$STATE"/companion.log*
+    rmdir "$STATE" 2>/dev/null || echo "Left $STATE (it contains other files)."
     echo "Removed agent, venv, pairing, config and logs."
   else
     echo "Removed agent and venv. Pairing and logs kept in: $STATE (use --purge to delete)."

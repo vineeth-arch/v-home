@@ -152,3 +152,30 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StalePairingTests(unittest.TestCase):
+    def test_not_paired_stops_instead_of_retrying(self):
+        calls = []
+
+        class Rejecting:
+            def __init__(self, *a):
+                pass
+
+            async def open(self):
+                calls.append(1)
+                raise ssap.NotPaired("TV refused registration (403)")
+
+            async def close(self):
+                pass
+
+        real = ssap.Client
+        ssap.Client = Rejecting
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                r = cli.Runner(Watcher(VH, [HOME]), Path(d), "192.0.2.1")
+                asyncio.run(asyncio.wait_for(r.forever({}, "key", "pin"), 5))
+        finally:
+            ssap.Client = real
+        self.assertEqual(calls, [1])
+        self.assertIn("run `pair` again", r.last_error)

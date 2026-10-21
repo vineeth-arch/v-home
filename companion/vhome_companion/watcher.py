@@ -90,7 +90,7 @@ class Watcher:
 
     def resume(self):
         self.paused = False
-        self.pending = None
+        self.pending = None  # last_app kept: resume acts on the next real Home transition, not the screen already showing
         self._redirects.clear()
         self._failures.clear()
         self._home_times.clear()
@@ -150,6 +150,7 @@ class Watcher:
 
     def _fail(self, now, reason):
         self.pending = None
+        # last_app stays: repeated notifications of the same Home are not a new transition (brief: do not loop)
         self.stats["failed"] += 1
         self.stats["last_failure"] = reason
         self._failures.append(now)

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { bundledCatalog, iconUrl, mergeEntries, parseCatalog, type CatalogEntry } from './catalog'
+import { bundledCatalog, iconUrl, isSystemApp, mergeEntries, parseCatalog, withRemembered, type CatalogEntry } from './catalog'
 
 const good = { id: 'netflix', title: ' Netflix ', kind: 'app', icon: 'netflix.png', source: 'companion', system: false }
 const file = (entries: unknown[]) => ({ schema: 1, generatedAt: 'x', tv: { model: 'm', firmware: 'f' }, entries })
@@ -48,4 +48,21 @@ test('merge keeps order, marks removed unavailable, appends new, updates survivo
   expect(out[1].unavailable).toBeUndefined()
   expect(out[2].unavailable).toBe(true)
   expect(out[3].unavailable).toBeUndefined()
+})
+
+test('system rule matches the companion: helpers and V/HOME hidden, user apps and inputs kept', () => {
+  expect(isSystemApp('com.webos.app.livetv', 'app')).toBe(true)
+  expect(isSystemApp('com.designinnsaeit.vhome', 'app')).toBe(true)
+  expect(isSystemApp('com.webos.app.browser', 'app')).toBe(false)
+  expect(isSystemApp('com.webos.app.hdmi1', 'input')).toBe(false)
+  expect(isSystemApp('netflix', 'app', true)).toBe(true)
+  expect(isSystemApp('netflix', 'app')).toBe(false)
+})
+test('remembered catalog keeps a vanished app only while the layout uses it', () => {
+  localStorage.clear()
+  withRemembered([E('netflix'), E('gone'), E('unused')], () => false)
+  const next = withRemembered([E('netflix')], (id) => id === 'gone')
+  expect(next.map((e) => [e.id, !!e.unavailable])).toEqual([['netflix', false], ['gone', true]])
+  localStorage.setItem('vhomeLauncher.catalog.v1', '{bad')
+  expect(withRemembered([E('x')], () => true).map((e) => e.id)).toEqual(['x'])
 })

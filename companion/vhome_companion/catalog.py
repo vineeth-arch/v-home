@@ -153,6 +153,8 @@ def write_atomic(out, catalog, icons):
     """Write into a temp dir next to `out`, validate, then swap. On any failure `out` is untouched."""
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    for stale in [*out.parent.glob(out.name + ".tmp-*"), *out.parent.glob(out.name + ".old-*")]:
+        shutil.rmtree(stale, ignore_errors=True)
     tmp = Path(tempfile.mkdtemp(prefix=out.name + ".tmp-", dir=out.parent))
     old = None
     try:

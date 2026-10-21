@@ -94,6 +94,23 @@ export function mergeEntries(prev: CatalogEntry[], next: CatalogEntry[]): Catalo
   return out
 }
 
+// Same rule as companion catalog.py `_is_system`: internal webOS helpers and V/HOME itself stay out of the grid.
+export const VHOME_ID = 'com.designinnsaeit.vhome'
+const USER_FACING = new Set(['com.webos.app.browser', 'com.webos.app.photovideo', 'com.webos.app.music', 'com.webos.app.screenshare'])
+export const isSystemApp = (id: string, kind: CatalogEntry['kind'], hiddenByTv = false) =>
+  kind === 'app' && (hiddenByTv || id === VHOME_ID || (id.startsWith('com.webos.app.') && !USER_FACING.has(id)))
+
+const PREV_KEY = 'vhomeLauncher.catalog.v1'
+/** Remembers the last catalog on this TV so apps that disappear stay in the layout, greyed ("Not on this TV"),
+ *  instead of silently vanishing. Only entries the layout still references are kept as unavailable. Never throws. */
+export function withRemembered(current: CatalogEntry[], referenced: (id: string) => boolean): CatalogEntry[] {
+  let prev: CatalogEntry[] = []
+  try { prev = parseCatalog({ schema: 1, generatedAt: '', tv: { model: '', firmware: '' }, entries: JSON.parse(localStorage.getItem(PREV_KEY) ?? '[]') })?.entries ?? [] } catch { prev = [] }
+  const merged = mergeEntries(prev, current).filter((e) => !e.unavailable || referenced(e.id))
+  try { localStorage.setItem(PREV_KEY, JSON.stringify(merged.map(({ unavailable: _u, ...e }) => e))) } catch { /* storage unavailable */ }
+  return merged
+}
+
 /** URL usable in <img src> for the entry's bundled icon, or null (show lettered fallback). */
 export function iconUrl(e: CatalogEntry): string | null {
   if (!e.icon) return null

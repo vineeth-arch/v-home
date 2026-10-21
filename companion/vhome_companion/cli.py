@@ -212,6 +212,11 @@ class Runner:
                 await self.session(client)
             except asyncio.CancelledError:
                 raise
+            except ssap.NotPaired as e:
+                # A revoked/stale key would make the TV show its pairing prompt on every retry. Stop until `pair` is re-run.
+                self.last_error = f"{e} (watcher stopped; run `pair` again)"
+                log.error("%s", self.last_error)
+                return
             except (ssap.SsapError, OSError, TimeoutError) as e:
                 self.last_error = str(e)
                 quiet = isinstance(e, ssap.ConnectionLost) or getattr(e, "quiet", False)

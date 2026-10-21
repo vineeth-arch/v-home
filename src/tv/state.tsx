@@ -11,7 +11,7 @@ import { useLive, type Live } from './live'
 import { LunaTimer, MockTimer, TimerController, type TimerState } from '../adapters/timer'
 import { resolvePrefs } from '../shared/prefs'
 import { studioVisible } from '../../supabase/functions/_shared/studio'
-import { bundledCatalog, type CatalogEntry, type Capability } from '../shared/catalog'
+import { bundledCatalog, isSystemApp, withRemembered, type CatalogEntry, type Capability } from '../shared/catalog'
 import { loadPrefs, savePrefs, MAX_FAVORITES, type LauncherPrefs } from '../shared/launcherPrefs'
 import { fetchWeather, loadCached, saveCached, weatherView, type Weather, type WeatherView } from '../adapters/weather'
 
@@ -145,6 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Launcher: bundled catalog is the base; apps installed on the TV are appended when webOS lets us list them.
   const [tvApps, setTvApps] = useState<CatalogEntry[]>([])
   const [lpCap, setLpCap] = useState<Capability>('unverified')
+  const [lpDone, setLpDone] = useState(platform.simulated)
   useEffect(() => {
     if (platform.simulated) return
     let stop = false
@@ -152,16 +153,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (stop) return
       if ('ok' in r && r.ok) {
         setLpCap('supported')
-        setTvApps(parseLaunchPoints(r.data).map((a) => ({ id: a.id, title: a.label, kind: a.id.includes('.hdmi') ? 'input' : 'app', icon: null, source: 'tv', system: false })))
+        const raw = Array.isArray(r.data.launchPoints) ? (r.data.launchPoints as { id?: unknown; hidden?: unknown; visible?: unknown }[]) : []
+        const hiddenByTv = new Set(raw.filter((x) => x.hidden === true || x.visible === false).map((x) => String(x.id)))
+        setTvApps(parseLaunchPoints(r.data).map((a) => {
+          const kind = a.id.includes('.hdmi') ? 'input' as const : 'app' as const
+          return { id: a.id, title: a.label, kind, icon: null, source: 'tv' as const, system: isSystemApp(a.id, kind, hiddenByTv.has(a.id)) }
+        }))
       } else if ('ok' in r && /denied|permission|not allowed|security/i.test(r.error)) setLpCap('denied')
-    })
+    }).catch(() => { if (!stop) setLpCap('unavailable') }).finally(() => { if (!stop) setLpDone(true) })
     return () => { stop = true }
   }, [platform])
+  const [launcherPrefs, setPrefsState] = useState<LauncherPrefs>(loadPrefs)
   const catalog = useMemo(() => {
     const base = bundledCatalog().entries
-    return [...base, ...tvApps.filter((n) => !base.some((b) => b.id === n.id))]
-  }, [tvApps])
-  const [launcherPrefs, setPrefsState] = useState<LauncherPrefs>(loadPrefs)
+    const current = [...base, ...tvApps.filter((n) => !base.some((b) => b.id === n.id))]
+    if (!lpDone) return current // wait for the TV list so installed apps are not briefly marked missing
+    const p = launcherPrefs
+    return withRemembered(current, (id) => p.favorites.includes(id) || p.order.includes(id) || p.folders.some((f) => f.apps.includes(id)))
+  }, [tvApps, lpDone, launcherPrefs])
   // any save (seed or user edit) marks the layout as chosen, so household pins never overwrite it later
   const setLauncherPrefs = useCallback((p: LauncherPrefs) => { const q = { ...p, seeded: true }; setPrefsState(q); savePrefs(q) }, [])
   const hasHousehold = isLive ? live.status === 'ready' && live.snapshot != null : true
