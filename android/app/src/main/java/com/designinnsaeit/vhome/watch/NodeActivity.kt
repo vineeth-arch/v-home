@@ -62,6 +62,8 @@ class NodeActivity : Activity() {
     private var deviceAt = 0L
     private var deviceWall = 0L
     private var health: NodeHealth? = null
+    private var visual: HealthVisual? = null
+    private val dash by lazy { HealthDashboard(this) }
     private var healthAt = 0L
     private var healthWall = 0L
     private var healthMissing = false // status works but the node has no (readable) /v1/health
@@ -100,6 +102,7 @@ class NodeActivity : Activity() {
         }
         v<Button>(R.id.pairButton).setOnClickListener { pair() }
         v<Button>(R.id.healthToggle).setOnClickListener { healthOpen = !healthOpen; renderHealth() }
+        v<View>(R.id.healthBanner).setOnClickListener { scrollToProblems() }
         v<Button>(R.id.usePhoneFromSetup).setOnClickListener { switchToStandalone() }
 
         v<Button>(R.id.launchButton).setOnClickListener {
@@ -294,7 +297,7 @@ class NodeActivity : Activity() {
                 stopWatcherService()
                 v<EditText>(R.id.codeField).setText("")
                 pendingHost = null; pendingNodeId = null
-                status = null; device = null; health = null; healthMissing = false; problem = null
+                status = null; device = null; health = null; visual = null; healthMissing = false; problem = null
                 scheduleHealthJob()
                 notice(getString(R.string.node_paired_ok))
                 show(Screen.STATUS)
@@ -331,7 +334,7 @@ class NodeActivity : Activity() {
             status = s; problem = null; rediscoverTried = false
             NodeHealthJob.rememberWifi(this)
             try {
-                health = c.health(); healthAt = SystemClock.elapsedRealtime(); healthWall = System.currentTimeMillis()
+                val hj = c.healthJson(); health = NodeHealth.parse(hj); visual = NodeHealthVisual.parse(hj); healthAt = SystemClock.elapsedRealtime(); healthWall = System.currentTimeMillis()
                 healthMissing = false
             } catch (e: NodeException) {
                 // Keep what we have: it goes stale and is greyed. No health at all = an older node.
@@ -414,8 +417,8 @@ class NodeActivity : Activity() {
             setIfChanged(if (s != null && p != null) NodeUi.problemMessage(p.problem, vpn) else "")
             setTextColor(getColor(fg))
         }
-        v<TextView>(R.id.heroExplain).setIfChanged(hero.explain)
-        v<TextView>(R.id.updatedText).setIfChanged(if (s != null) NodeUi.updatedLabel(now - statusAt) else "")
+        v<TextView>(R.id.heroExplain).apply { setIfChanged(hero.explain); setTextColor(getColor(fg)) }
+        v<TextView>(R.id.updatedText).apply { setIfChanged(if (s != null) NodeUi.updatedLabel(now - statusAt) else ""); setTextColor(getColor(fg)) }
 
         // Actions and cards need data from the node.
         val resume = s != null && NodeUi.showResume(s.watcherState, s.paused)
@@ -474,23 +477,25 @@ class NodeActivity : Activity() {
             summary.setIfChanged(getString(R.string.node_health_unavailable))
             summary.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.sq_info, 0, 0, 0)
             summary.setTextColor(getColor(R.color.ink))
-            v<View>(R.id.healthProblems).visibility = View.GONE
+            summary.visibility = View.VISIBLE
+            v<View>(R.id.healthDash).visibility = View.GONE
             v<View>(R.id.healthToggle).visibility = View.GONE
             v<View>(R.id.healthAll).visibility = View.GONE
             return
         }
         v<View>(R.id.healthProblems).visibility = View.VISIBLE
         v<View>(R.id.healthToggle).visibility = View.VISIBLE
+        v<View>(R.id.healthDash).visibility = View.VISIBLE
+        summary.visibility = View.GONE
         val stale = healthStale(now)
         val seen = lastSeen(if (h != null) healthWall else statusWall, h?.ageS)
         val local = NodeHealthUi.connection(p?.problem, stale, now - healthAt, vpnActive(), seen)
         val view = NodeHealthUi.build(local, h, stale)
 
-        summary.setIfChanged(view.summary)
-        summary.setTextColor(getColor(colourRes(NodeHealthUi.colour(view.level, false))))
-        summary.setCompoundDrawablesRelativeWithIntrinsicBounds(markRes(view.level, false), 0, 0, 0)
+        dash.render(h?.items.orEmpty(), visual, stale, view, if (stale) local.detail else null)
 
         val problemsBox = v<LinearLayout>(R.id.healthProblems)
+        problemsBox.visibility = if (view.problems.isEmpty()) View.GONE else View.VISIBLE
         val psig = view.problems.joinToString("|") { "${it.group}/${it.key}" }
         if (psig != problemsSig) {
             problemsSig = psig
@@ -499,12 +504,17 @@ class NodeActivity : Activity() {
         }
         view.problems.forEachIndexed { i, it -> bindHealthRow(problemsBox.getChildAt(i), it, stale, seen, true) }
 
+        // Status lights: everything without a gauge, minus what the problem list already shows.
+        val shownAsProblem = view.problems.map { NodeHealthVisual.id(it) }.toSet()
+        val groups = NodeHealthVisual.lights(view.groups, visual, NodeHealthVisual.throttleIds(h?.items.orEmpty(), visual)).map { (g, items) -> g to items.filter { NodeHealthVisual.id(it) !in shownAsProblem } }
+            .filter { it.second.isNotEmpty() }
+        val count = groups.sumOf { it.second.size }
         val allBox = v<LinearLayout>(R.id.healthAll)
-        val asig = view.groups.joinToString("|") { (g, items) -> g + ":" + items.joinToString(",") { it.key } }
+        val asig = groups.joinToString("|") { (g, items) -> g + ":" + items.joinToString(",") { it.key } }
         if (asig != allSig) {
             allSig = asig
             allBox.removeAllViews()
-            view.groups.forEachIndexed { gi, (g, items) ->
+            groups.forEachIndexed { gi, (g, items) ->
                 allBox.addView(TextView(this, null, 0, R.style.T_Small_Header).apply {
                     text = NodeHealthUi.groupTitle(g)
                     isAllCaps = false
@@ -515,17 +525,25 @@ class NodeActivity : Activity() {
             }
         }
         var idx = 0
-        view.groups.forEach { (_, items) ->
+        groups.forEach { (_, items) ->
             idx++ // group header
-            items.forEach {
-                val row = allBox.getChildAt(idx++)
-                bindHealthRow(row, it, stale, seen, false)
-            }
+            items.forEach { bindHealthRow(allBox.getChildAt(idx++), it, stale, seen, false) }
         }
-        allBox.visibility = if (healthOpen) View.VISIBLE else View.GONE
+        allBox.visibility = if (healthOpen && count > 0) View.VISIBLE else View.GONE
         v<Button>(R.id.healthToggle).apply {
-            setIfChanged(NodeHealthUi.toggleText(view.total, healthOpen))
+            visibility = if (count > 0) View.VISIBLE else View.GONE
+            setIfChanged(NodeHealthUi.lightsToggleText(count, healthOpen))
         }
+    }
+
+    /** Banner tap: bring the first problem into view. */
+    private fun scrollToProblems() {
+        val box = v<View>(R.id.healthProblems)
+        if (box.visibility != View.VISIBLE) return
+        val sv = v<android.widget.ScrollView>(R.id.scroll)
+        val r = android.graphics.Rect(0, 0, box.width, box.height)
+        sv.offsetDescendantRectToMyCoords(box, r)
+        sv.smoothScrollTo(0, maxOf(0, r.top - (24 * resources.displayMetrics.density).toInt()))
     }
 
     private fun bindHealthRow(row: View, item: HealthItem, stale: Boolean, seen: String, showDetail: Boolean) {
@@ -665,8 +683,8 @@ class NodeActivity : Activity() {
         brightnessButtons.forEachIndexed { idx, b ->
             val on = idx + 1 == ledBrightness
             b.isSelected = on
-            b.setBackgroundResource(if (on) R.drawable.btn_primary else R.drawable.btn_ghost)
-            b.setTextColor(getColor(R.color.ink))
+            b.setBackgroundResource(if (on) R.drawable.node_btn_primary else R.drawable.btn_ghost)
+            b.setTextColor(getColor(if (on) R.color.on_blue else R.color.ink))
             b.setTypeface(null, if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
     }
@@ -835,7 +853,7 @@ class NodeActivity : Activity() {
     private fun forgetNode() {
         store.forget()
         NodeHealthJob.cancel(this)
-        status = null; device = null; health = null; healthMissing = false; problem = null
+        status = null; device = null; health = null; visual = null; healthMissing = false; problem = null
         pendingHost = null; pendingNodeId = null
         v<View>(R.id.diagScroll).visibility = View.GONE
         v<View>(R.id.diagCopy).visibility = View.GONE

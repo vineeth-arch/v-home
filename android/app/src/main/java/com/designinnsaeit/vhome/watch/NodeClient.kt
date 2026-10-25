@@ -57,6 +57,9 @@ class NodeClient(
 
     suspend fun status(): NodeStatus = NodeStatus.parse(get("/v1/status"))
     suspend fun health(): NodeHealth = NodeHealth.parse(get("/v1/health"))
+
+    /** The raw /v1/health body, so the dashboard can read the optional visual fields next to NodeHealth. */
+    suspend fun healthJson(): JSONObject = get("/v1/health")
     suspend fun device(): DeviceStatus = DeviceStatus.parse(get("/v1/device"))
     suspend fun diagnostics(): String = get("/v1/diagnostics").toString(2)
 

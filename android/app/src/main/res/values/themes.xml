@@ -65,6 +65,42 @@
         <item name="android:paddingBottom">20dp</item>
     </style>
 
+    <!-- Health dashboard banner -->
+    <style name="HealthBanner">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:accessibilityLiveRegion">polite</item>
+    </style>
+    <style name="HealthBannerGlyph">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">14dp</item>
+        <item name="android:textSize">30sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/on_blue</item>
+    </style>
+    <style name="HealthBannerTitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/on_blue</item>
+    </style>
+    <style name="HealthBannerSub">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/on_blue</item>
+    </style>
+
     <!-- Buttons -->
     <style name="Btn" parent="android:Widget.Material.Button">
         <item name="android:minHeight">48dp</item>
@@ -87,6 +123,11 @@
         <item name="android:textSize">18sp</item>
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:textStyle">bold</item>
+    </style>
+    <!-- node screen: red now means error, so its primary buttons use the hero blue (paper text is ~8:1 on it) -->
+    <style name="Btn.NodePrimary" parent="Btn.Primary">
+        <item name="android:background">@drawable/node_btn_primary</item>
+        <item name="android:textColor">@color/on_blue</item>
     </style>
     <style name="Btn.Ghost">
         <item name="android:background">@drawable/btn_ghost</item>

@@ -147,6 +147,11 @@
     <string name="node_pause">Pause 1 hour</string>
     <string name="node_section_health">Health</string>
     <string name="node_health_unavailable">This node doesn\'t report health yet. Update the node.</string>
+    <string name="node_health_last_hour">Last hour</string>
+    <string name="node_health_collecting">Collecting data…</string>
+    <string name="node_health_redirects">Redirects</string>
+    <string name="node_health_lights_show">Show all %1$d status lights</string>
+    <string name="node_health_lights_hide">Hide status lights</string>
     <string name="node_health_checking">Checking the node…</string>
     <string name="channel_node_problems">Node problems</string>
     <string name="node_alert_title">V/HOME node needs a look</string>

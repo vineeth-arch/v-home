@@ -83,7 +83,7 @@
             android:importantForAutofill="no" />
         <Button
             android:id="@+id/connectButton"
-            style="@style/Btn.Primary"
+            style="@style/Btn.NodePrimary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -137,7 +137,7 @@
             android:layout_marginTop="20dp" android:text="@string/node_fp_ask" />
         <Button
             android:id="@+id/fpMatch"
-            style="@style/Btn.Primary"
+            style="@style/Btn.NodePrimary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -192,7 +192,7 @@
             android:inputType="textPersonName" />
         <Button
             android:id="@+id/pairButton"
-            style="@style/Btn.Primary"
+            style="@style/Btn.NodePrimary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -219,7 +219,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@color/blue"
-            android:minHeight="176dp"
             android:orientation="vertical"
             android:padding="20dp">
 
@@ -236,7 +235,65 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp" />
+            <TextView
+                android:id="@+id/heroExplain"
+                style="@style/T.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" />
+            <TextView
+                android:id="@+id/updatedText"
+                style="@style/T.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" />
         </LinearLayout>
+
+    <View style="@style/Rule" />
+
+    <LinearLayout
+        android:id="@+id/actionsSection"
+        style="@style/Section">
+
+        <Button
+            android:id="@+id/launchButton"
+            style="@style/Btn.NodePrimary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="@string/node_launch" />
+        <Button
+            android:id="@+id/resumeButton"
+            style="@style/Btn.NodePrimary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_resume"
+            android:visibility="gone" />
+        <Button
+            android:id="@+id/turnOnButton"
+            style="@style/Btn.NodePrimary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_turn_on"
+            android:visibility="gone" />
+        <Button
+            android:id="@+id/pauseButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_pause" />
+        <TextView
+            android:id="@+id/actionResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <View style="@style/Rule" />
 
@@ -260,13 +317,119 @@
             android:drawablePadding="10dp"
             android:textStyle="bold" />
         <LinearLayout
-            android:id="@+id/healthProblems"
+            android:id="@+id/healthDash"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:divider="@drawable/hairline"
-            android:orientation="vertical"
-            android:showDividers="middle" />
+            android:orientation="vertical">
+            <LinearLayout
+                android:id="@+id/healthBanner"
+                style="@style/HealthBanner">
+                <TextView
+                    android:id="@+id/healthBannerGlyph"
+                    style="@style/HealthBannerGlyph"
+                    android:importantForAccessibility="no" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:id="@+id/healthBannerTitle"
+                        style="@style/HealthBannerTitle"
+                        android:importantForAccessibility="no" />
+                    <TextView
+                        android:id="@+id/healthBannerSub"
+                        style="@style/HealthBannerSub"
+                        android:importantForAccessibility="no" />
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout
+                android:id="@+id/healthProblems"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:divider="@drawable/hairline"
+                android:orientation="vertical"
+                android:showDividers="middle" />
+            <LinearLayout
+                android:id="@+id/healthGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/healthBarGauges"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical" />
+            <LinearLayout
+                android:id="@+id/healthSparks"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:orientation="vertical">
+                <TextView
+                    style="@style/T.Label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/node_health_last_hour" />
+                <TextView
+                    android:id="@+id/sparkEmpty"
+                    style="@style/T.Dim"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/node_health_collecting" />
+                <com.designinnsaeit.vhome.watch.SparklineView
+                    android:id="@+id/sparkTemp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" />
+                <com.designinnsaeit.vhome.watch.SparklineView
+                    android:id="@+id/sparkCpu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" />
+                <com.designinnsaeit.vhome.watch.SparklineView
+                    android:id="@+id/sparkWifi"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+            <LinearLayout
+                android:id="@+id/healthRedirects"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center_vertical"
+                android:minHeight="48dp"
+                android:orientation="horizontal">
+                <com.designinnsaeit.vhome.watch.DonutView
+                    android:id="@+id/redirectDonut"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        style="@style/T.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:importantForAccessibility="no"
+                        android:text="@string/node_health_redirects" />
+                    <TextView
+                        android:id="@+id/redirectText"
+                        style="@style/T.Body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:importantForAccessibility="no" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
         <Button
             android:id="@+id/healthToggle"
             style="@style/Btn.Ghost"
@@ -278,65 +441,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:visibility="gone" />
-    </LinearLayout>
-
-    <View style="@style/Rule" />
-
-    <LinearLayout
-        android:id="@+id/actionsSection"
-        style="@style/Section">
-
-        <TextView
-            android:id="@+id/heroExplain"
-            style="@style/T.Dim"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="0dp" />
-        <TextView
-            android:id="@+id/updatedText"
-            style="@style/T.Small"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:textColor="@color/text_dim" />
-        <Button
-            android:id="@+id/launchButton"
-            style="@style/Btn.Primary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/node_launch" />
-        <Button
-            android:id="@+id/resumeButton"
-            style="@style/Btn.Primary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="@string/node_resume"
-            android:visibility="gone" />
-        <Button
-            android:id="@+id/turnOnButton"
-            style="@style/Btn.Primary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="@string/node_turn_on"
-            android:visibility="gone" />
-        <Button
-            android:id="@+id/pauseButton"
-            style="@style/Btn.Ghost"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="@string/node_pause" />
-        <TextView
-            android:id="@+id/actionResult"
-            style="@style/T.Body"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp" android:drawablePadding="10dp"
-            android:accessibilityLiveRegion="polite"
             android:visibility="gone" />
     </LinearLayout>
 
@@ -394,7 +498,7 @@
                 android:visibility="gone" />
         <Button
             android:id="@+id/tvPairButton"
-            style="@style/Btn.Primary"
+            style="@style/Btn.NodePrimary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
