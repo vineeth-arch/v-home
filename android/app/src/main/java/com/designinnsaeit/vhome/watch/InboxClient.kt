@@ -36,7 +36,7 @@ class InboxClient(private val node: NodeClient) {
         val errorCode: String? get() = json()?.optString("error")?.ifEmpty { null }
     }
 
-    suspend fun submit(key: String, text: String, kind: String): SubmitOutcome {
+    suspend fun submit(key: String, text: String, kind: String, label: String = ""): SubmitOutcome {
         val nonce = try {
             nonce()
         } catch (e: InboxException) {
@@ -44,7 +44,8 @@ class InboxClient(private val node: NodeClient) {
         }
         val req = node.authedRequest("/v1/inbox/jobs")
             .post(text.toRequestBody("text/plain; charset=utf-8".toMediaType()))
-            .header("X-Inbox-Kind", kind).header("X-Idempotency-Key", key).header("X-VNode-Nonce", nonce).build()
+            .header("X-Inbox-Kind", kind).header("X-Idempotency-Key", key).header("X-VNode-Nonce", nonce)
+            .apply { if (label.isNotEmpty()) header("X-Label", InboxRules.headerLabel(label)) }.build()
         val reply = try {
             exec(node.commandClient, req)
         } catch (e: IOException) {
