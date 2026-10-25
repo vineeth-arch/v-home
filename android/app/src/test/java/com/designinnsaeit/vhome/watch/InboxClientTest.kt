@@ -52,6 +52,22 @@ class InboxClientTest {
         assertEquals("Bearer tok", r.getHeader("Authorization"))
     }
 
+    @Test fun fileSubmitSendsKindAndLabel() {
+        nonce(); server.enqueue(json("""{"job":$job}""", 201))
+        assertTrue(runBlocking { inbox.submit(key, "# hi", "md", "notes.md") } is SubmitOutcome.Sent)
+        server.takeRequest(1, TimeUnit.SECONDS)
+        val r = server.takeRequest(1, TimeUnit.SECONDS)!!
+        assertEquals("md", r.getHeader("X-Inbox-Kind"))
+        assertEquals("notes.md", r.getHeader("X-Label"))
+    }
+
+    @Test fun noLabelHeaderWhenEmpty() {
+        nonce(); server.enqueue(json("""{"job":$job}""", 201))
+        runBlocking { inbox.submit(key, "hello", "text") }
+        server.takeRequest(1, TimeUnit.SECONDS)
+        assertEquals(null, server.takeRequest(1, TimeUnit.SECONDS)!!.getHeader("X-Label"))
+    }
+
     @Test fun duplicate200IsSent() {
         nonce(); server.enqueue(json("""{"job":$job,"duplicate":true}"""))
         assertTrue(runBlocking { inbox.submit(key, "hello", "text") } is SubmitOutcome.Sent)
@@ -85,7 +101,7 @@ class InboxClientTest {
         nonce(); server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
         server.enqueue(json("{}", 500))
         val out = runBlocking { inbox.submit(key, "hello", "text") } as SubmitOutcome.NotDelivered
-        assertEquals("Not delivered (HTTP 500)", out.message)
+        assertTrue(out.message, out.message.startsWith("VNode had a problem (HTTP 500)"))
     }
 
     @Test fun post502ResolvesByKeyAndIsSent() {

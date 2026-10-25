@@ -7,7 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** [key] is the idempotency key: made once with the draft and reused on every resend. */
-data class Draft(val key: String, val text: String, val kind: String, val createdAt: Long)
+data class Draft(val key: String, val text: String, val kind: String, val createdAt: Long, val label: String = "")
 
 /**
  * Drafts waiting to reach VNode, in app-private storage (filesDir). The file is PLAINTEXT, not sealed like the
@@ -20,8 +20,11 @@ class DraftStore(private val file: File) {
 
     @Synchronized fun all(): List<Draft> = load()
 
-    @Synchronized fun add(text: String, now: Long = System.currentTimeMillis(), key: String = InboxRules.newKey()): Added {
-        val d = Draft(key, text, InboxRules.detectKind(text), now)
+    @Synchronized fun add(
+        text: String, now: Long = System.currentTimeMillis(), key: String = InboxRules.newKey(),
+        kind: String = InboxRules.detectKind(text), label: String = "",
+    ): Added {
+        val d = Draft(key, text, kind, now, label)
         val (kept, dropped) = enforce(load() + d)
         return Added(d, dropped, save(kept))
     }
@@ -32,7 +35,7 @@ class DraftStore(private val file: File) {
     private fun load(): List<Draft> = try {
         val a = JSONArray(file.takeIf { it.exists() }?.readText() ?: "[]")
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
-            Draft(it.optString("key"), it.optString("text"), it.optString("kind"), it.optLong("at"))
+            Draft(it.optString("key"), it.optString("text"), it.optString("kind"), it.optLong("at"), it.optString("label"))
         }.filter { InboxRules.isValidKey(it.key) }
     } catch (e: Exception) {
         // Damaged file = no drafts, but keep the bytes (one .bak) so nothing is silently lost.
@@ -42,7 +45,7 @@ class DraftStore(private val file: File) {
 
     private fun save(list: List<Draft>): Boolean {
         val a = JSONArray()
-        list.forEach { a.put(JSONObject().put("key", it.key).put("text", it.text).put("kind", it.kind).put("at", it.createdAt)) }
+        list.forEach { a.put(JSONObject().put("key", it.key).put("text", it.text).put("kind", it.kind).put("at", it.createdAt).put("label", it.label)) }
         val tmp = File(file.parentFile, file.name + ".tmp")
         return try {
             FileOutputStream(tmp).use { it.write(a.toString().toByteArray(Charsets.UTF_8)); it.flush(); it.fd.sync() }

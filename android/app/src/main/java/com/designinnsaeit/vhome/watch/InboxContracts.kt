@@ -1,5 +1,9 @@
 package com.designinnsaeit.vhome.watch
 
+import java.io.InputStream
+import java.text.Normalizer
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.UUID
 import org.json.JSONObject
 
@@ -37,7 +41,7 @@ data class InboxCounts(val queued: Int, val claimed: Int, val processing: Int, v
 }
 
 /**
- * GET /v1/inbox/brain-status. The snapshot is whatever the Mac worker reported; its field names are not fixed by the
+ * GET /v1/inbox/brain-status. The snapshot is whatever the delivery worker reported; its field names are not fixed by the
  * contract, so every field is optional (null = not reported).
  */
 data class BrainStatus(
@@ -68,6 +72,10 @@ enum class ByKeyDecision { SENT, RESEND_SAFE, KEEP_DRAFT }
 
 object InboxRules {
     const val MAX_TEXT_BYTES = 8 * 1024
+    /** Shared .md/.txt files; same cap as the Pi's MAX_DOC (contract: md/txt are 256 KB). */
+    const val MAX_FILE_BYTES = 256 * 1024
+    const val MAX_LABEL = 40
+    const val AUTO_REFRESH_MS = 35_000L
     const val MAX_DRAFTS = 20
     const val MAX_DRAFT_BYTES = 300 * 1024
     private val URL = Regex("^https?://\\S+$")
@@ -100,7 +108,57 @@ object InboxRules {
         bytes(text) > MAX_TEXT_BYTES -> Check.TOO_LARGE
         else -> Check.OK
     }
-    fun counter(text: String) = "${bytes(text)} / $MAX_TEXT_BYTES bytes"
+    fun isFileKind(kind: String) = kind == "md" || kind == "txt"
+    fun counter(text: String, kind: String = "text") = "${bytes(text)} / ${if (isFileKind(kind)) MAX_FILE_BYTES else MAX_TEXT_BYTES} bytes"
+
+    // ---- Share target -------------------------------------------------------------------------------
+
+    enum class ShareAction { SEND_NOW, PREFILL, DRAFT_UNPAIRED, DRAFT_NO_WIFI }
+
+    /** Paired and on Wi-Fi: send at once (the idempotency key makes a resend safe). Busy: let the owner review. Else a draft. */
+    fun shareAction(paired: Boolean, onWifi: Boolean, busy: Boolean): ShareAction = when {
+        !paired -> ShareAction.DRAFT_UNPAIRED
+        !onWifi -> ShareAction.DRAFT_NO_WIFI
+        busy -> ShareAction.PREFILL
+        else -> ShareAction.SEND_NOW
+    }
+
+    const val REVIEW_NOTICE = "Review and tap Send"
+    const val SENT_NOTICE = "Sent to VNode. It goes to Brain in about a minute."
+
+    /** md for .md/.markdown names or markdown mime types, txt for everything else. */
+    fun fileKind(name: String?, mime: String?): String {
+        val ext = name?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        return if (ext == "md" || ext == "markdown" || mime?.lowercase()?.let { it == "text/markdown" || it == "text/x-markdown" } == true) "md" else "txt"
+    }
+
+    /** What the Pi would keep of a label anyway (ASCII letters, digits, space . _ -; 40 chars); non-ASCII would break a header. */
+    fun headerLabel(name: String?): String {
+        if (name.isNullOrEmpty()) return ""
+        return Normalizer.normalize(name, Normalizer.Form.NFKD).replace(Regex("[^A-Za-z0-9 ._-]"), "").trim().take(MAX_LABEL)
+    }
+
+    /** All bytes of [input], or null when it holds more than [max]. */
+    fun readCapped(input: InputStream, max: Int = MAX_FILE_BYTES): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            if (out.size() + n > max) return null
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+
+    /** Strict UTF-8 without NUL (what the Pi accepts), else null. */
+    fun decodeText(b: ByteArray): String? {
+        val s = try {
+            Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(b)).toString()
+        } catch (e: java.nio.charset.CharacterCodingException) { return null }
+        return if (s.indexOf('\u0000') >= 0) null else s
+    }
 
     /** Server job status -> chip text. "completed" only means Brain's inbox took it, never that it was processed. */
     fun statusLabel(status: String): String = when (status) {
@@ -121,8 +179,26 @@ object InboxRules {
         else -> Tone.QUIET
     }
 
+    const val REPORTED_BY = "Reported by delivery worker"
+    const val WORKER_SEEN_LABEL = "Delivery worker last seen"
+    const val FAILED_IN_BRAIN_LABEL = "Brain couldn't file"
+    const val BRAIN_PROBLEM = "Brain had a problem. It retries on its own; if it stays, check Brain's Integrations page."
+
+    /** Worker/Brain error codes seen on a failed job: what happened, the likely cause, what to do. Null = not a code we know. */
+    fun codeMessage(code: String?): String? = when {
+        code == null -> null
+        code == "brain_http_401" || code == "brain_http_403" -> "Brain refused VNode's token. Re-issue it on Brain and update VNode."
+        code == "access_blocked" -> "Brain's login page is blocking VNode. Add the path to the Cloudflare Access bypass."
+        code == "name_conflict" -> "Brain already has a different file with this name. VNode won't overwrite it. Rename the file and share it again."
+        code == "write_failed" -> "Brain couldn't write the file. Its inbox folder may be full or read-only. Check Brain's disk, then Retry."
+        code == "bad_payload" -> "Brain couldn't read this item. It may be malformed or not plain text. Check it and send it again."
+        code == "brain_http_429" || (code.startsWith("brain_http_5") && code.length == 14) -> BRAIN_PROBLEM
+        code.startsWith("brain_http_") -> "Brain refused this item (HTTP ${code.removePrefix("brain_http_")}). Check the item and send it again. If it keeps failing, check Brain's Integrations page."
+        else -> null
+    }
+
     /** Short plain message for an error code (preferred) or HTTP status. */
-    fun errorMessage(http: Int?, code: String?): String = when (code) {
+    fun errorMessage(http: Int?, code: String?): String = codeMessage(code) ?: when (code) {
         "queue_full" -> "VNode queue is full, try later"
         "disk_reserve" -> "VNode is low on disk space"
         "too_large" -> "Too large for VNode (8 KB max)"
@@ -142,7 +218,8 @@ object InboxRules {
             429 -> errorMessage(null, "rate_limited")
             503 -> errorMessage(null, "integrations_unavailable")
             507 -> errorMessage(null, "disk_reserve")
-            else -> "Not delivered (HTTP ${http ?: "?"})"
+            in 500..599 -> "VNode had a problem (HTTP $http). Try Send again in a minute; if it stays, check VNode."
+            else -> "Not delivered (HTTP ${http ?: "?"}). Try Send again in a minute; if it stays, check VNode."
         }
     }
 
@@ -167,7 +244,7 @@ object InboxRules {
     fun brainStale(b: BrainStatus) = b.stale || b.workerStale
 
     fun brainHeadline(b: BrainStatus): String = when {
-        b.workerStale -> "Mac not reporting"
+        b.workerStale -> "Delivery worker not reporting"
         !b.hasSnapshot -> "No Brain report yet"
         b.stale -> "Brain report is out of date"
         b.reachable == false -> "Brain not reachable"
@@ -175,8 +252,16 @@ object InboxRules {
         else -> "Brain status reported"
     }
 
-    fun dryRunNotice(b: BrainStatus): String? = if (b.mode == "dry_run") "Mac worker in dry run — nothing is delivered" else null
+    fun dryRunNotice(b: BrainStatus): String? = if (b.mode == "dry_run") "Delivery worker in dry run — nothing is delivered" else null
     fun authNotice(b: BrainStatus): String? = if (b.authError) "Brain rejected the worker token" else null
+
+    /** One line on the Inbox tab when jobs wait because Brain (or the worker) is not answering. */
+    fun waitingNotice(c: InboxCounts?, b: BrainStatus?): String? {
+        if (c == null || b == null || c.queued <= 0) return null
+        if (!(b.stale || b.workerStale || b.reachable == false)) return null
+        return if (c.queued == 1) "1 waiting: VNode can't reach Brain right now. It sends automatically when it's back."
+        else "${c.queued} waiting: VNode can't reach Brain right now. They send automatically when it's back."
+    }
 
     fun ageText(s: Int?): String = if (s == null) "never" else NodeUi.durationText(s.toLong()) + " ago"
 }

@@ -49,9 +49,9 @@ class InboxContractsTest {
         assertEquals(InboxRules.errorMessage(null, "disk_reserve"), InboxRules.errorMessage(507, null))
         assertEquals(InboxRules.errorMessage(null, "unsupported_kind"), InboxRules.errorMessage(415, null))
         assertTrue(InboxRules.errorMessage(409, "key_conflict").contains("different text"))
-        assertEquals("Not delivered (HTTP 500)", InboxRules.errorMessage(500, null))
+        assertTrue(InboxRules.errorMessage(500, null).contains("(HTTP 500)"))
         assertEquals("VNode doesn't have the Inbox yet. Update VNode with --with-integrations.", InboxRules.errorMessage(404, "not_found"))
-        assertEquals("Not delivered (HTTP ?)", InboxRules.errorMessage(null, null))
+        assertTrue(InboxRules.errorMessage(null, null).startsWith("Not delivered (HTTP ?)"))
     }
 
     @Test fun statusLabelsNeverSayProcessed() {
@@ -92,7 +92,7 @@ class InboxContractsTest {
         assertEquals(NodeHealthUi.Colour.NORMAL, NodeHealthUi.colour(InboxRules.brainLevel(fresh), InboxRules.brainStale(fresh)))
 
         val workerGone = BrainStatus.parse(JSONObject("""{"snapshot":{"reachable":true},"snapshot_age_s":10,"stale":false,"worker_stale":true,"queue":{}}"""))
-        assertEquals("Mac not reporting", InboxRules.brainHeadline(workerGone))
+        assertEquals("Delivery worker not reporting", InboxRules.brainHeadline(workerGone))
         assertEquals(NodeHealthUi.Colour.GREY, NodeHealthUi.colour(InboxRules.brainLevel(workerGone), InboxRules.brainStale(workerGone)))
 
         val none = BrainStatus.parse(JSONObject("""{"snapshot":null,"stale":true,"worker_stale":false,"queue":{}}"""))
@@ -115,7 +115,7 @@ class InboxStatusTest {
 
     @Test fun modeAndAuthErrorAreSurfaced() {
         val b = BrainStatus.parse(JSONObject("""{"snapshot":{"reachable":true,"mode":"dry_run","auth_error":true},"stale":false,"worker_stale":false,"queue":{}}"""))
-        assertEquals("Mac worker in dry run — nothing is delivered", InboxRules.dryRunNotice(b))
+        assertEquals("Delivery worker in dry run — nothing is delivered", InboxRules.dryRunNotice(b))
         assertEquals("Brain rejected the worker token", InboxRules.authNotice(b))
         assertEquals(HealthLevel.ERROR, InboxRules.brainLevel(b))
         val live = BrainStatus.parse(JSONObject("""{"snapshot":{"reachable":true,"mode":"live"},"queue":{}}"""))
