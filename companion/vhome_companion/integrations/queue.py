@@ -277,14 +277,18 @@ class Queue:
                     return row
                 raise IntError(Err.STALE_CLAIM, "claim token does not match")
             if action == "requeue":
+                note = {}      # optional reason (worker could not reach Brain): shown on the queued job, no attempt counted
+                if error_code:
+                    note = dict(error_code=str(error_code)[:64],
+                                error_msg=contracts.redact(error_msg or "")[:contracts.MAX_ERROR_MSG])
                 if row["status"] == Status.UNKNOWN.value:  # the worker may have run it: count it, or claim->crash loops forever
                     attempts = row["attempts"] + 1
                     if attempts >= contracts.MAX_ATTEMPTS:
                         return self._set(row, Status.FAILED, attempts=attempts, lease_expires_mono=None,
                                          error_code="reconcile_limit", error_msg="gave up after repeated unknown outcomes",
                                          retention_until=self._retention(contracts.RETENTION_FAILED_S))
-                    return self._set(row, Status.QUEUED, attempts=attempts, next_attempt_at=None, **self._CLEAR)
-                return self._set(row, Status.QUEUED, next_attempt_at=None, **self._CLEAR)
+                    return self._set(row, Status.QUEUED, attempts=attempts, next_attempt_at=None, **note, **self._CLEAR)
+                return self._set(row, Status.QUEUED, next_attempt_at=None, **note, **self._CLEAR)
             return self._set(row, Status.FAILED, lease_expires_mono=None, error_code=str(error_code or "reconciled")[:64],
                              error_msg=contracts.redact(error_msg or "")[:contracts.MAX_ERROR_MSG],
                              retention_until=self._retention(contracts.RETENTION_FAILED_S))

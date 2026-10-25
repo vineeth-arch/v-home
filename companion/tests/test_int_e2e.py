@@ -946,24 +946,19 @@ class TestInfra(StackTest):
         self.assertFalse(bs["snapshot"]["reachable"])                # the phone can tell "Brain down" from "Mac down"
         self.assertFalse(bs["worker_stale"])
 
-    def test_brain_5xx_backs_off_then_succeeds_when_brain_returns(self):
+    def test_brain_5xx_requeues_without_burning_an_attempt_then_succeeds(self):
         text = self.marker("5xx")
         job = self.submit_ok("text", text)
         self.brain.capture_status = 503
         self.mac.run()
         j = self.phone.job(job["id"])
-        self.assertEqual((j["status"], j["attempts"], j["error_code"]), ("queued", 1, "brain_http_503"))
+        self.assertEqual((j["status"], j["attempts"], j["error_code"]), ("queued", 0, "brain_http_503"))
+        self.assertIn("Brain had an error", j["error_msg"])
         self.assertNotIn(text, json.dumps(j))
-        nxt = self.svc.row(job["id"])["next_attempt_at"]
-        self.assertGreater(nxt, self.clock.wall() + 30)              # backoff, not an immediate retry
-        calls = self.brain.capture_calls
-        self.brain.capture_status = 201                              # Brain is back, but backoff still holds
-        self.mac.run()
-        self.assertEqual((self.brain.capture_calls, self.phone.job(job["id"])["status"]), (calls, "queued"))
-        self.clock.advance(ic.BACKOFF_BASE_S * 4)
+        self.brain.capture_status = 201                              # Brain is back: no backoff, nothing was burned
         self.mac.run()
         j = self.phone.job(job["id"])
-        self.assertEqual((j["status"], j["attempts"]), ("completed", 1))
+        self.assertEqual((j["status"], j["attempts"]), ("completed", 0))
         self.assertEqual(len(self.brain.notes_with(text)), 1)
 
     def test_brain_4xx_is_a_permanent_failure_and_retry_is_offered(self):
