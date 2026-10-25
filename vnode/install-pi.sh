@@ -191,7 +191,7 @@ start_integrations() {
   local i
   systemctl enable "$INT_UNIT" >/dev/null 2>&1 || true
   systemctl restart "$INT_UNIT" || true
-  for i in $(seq 1 15); do
+  for i in $(seq 1 90); do   # Pi Zero W: first start took ~23 s (python imports)
     if systemctl is-active --quiet "$INT_UNIT" && [ -S "$INT_SOCKET" ]; then
       echo "integrations up after ${i}s"
       return 0
