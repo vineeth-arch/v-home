@@ -123,9 +123,13 @@ After install, 2026-10-25 (release 0.1.0-f7baa2f, measured on the Pi):
 | Disk | Release 432 KB; packages 3.8 MB; 848 MB free on `/` after install. |
 | Memory limit | Raspberry Pi OS boots with `cgroup_disable=memory`, so `MemoryMax=` in the units is not enforced on this kernel. Measured use is far below it. |
 | LED heat test | 30 min LEDs off then 30 min on (brightness 2/31, Wi-Fi bars lit), TV connected, sample every 30 s: off mean 43.48 C (min 42.2, max 48.7 during the first minutes after the update), on mean 43.31 C (min 42.8, max 44.4); last 5 minutes 43.04 C off vs 43.26 C on. No throttling or under-voltage in either phase. The LEDs add no heat that this sensor can measure (under 0.3 C), so they stay on by default. The 70 C thermal guard never came close to triggering. |
+| Health dashboard on the phone | All 26 indicators read live from the Pi on the Samsung SM-A556E (app 0.9.3, node 0.1.0-6d100c5): temperature, throttling now and since boot (vcgencmd, after allowing /dev/vcio_gencmd), core voltage, CPU load/use/speed, memory, swap, storage, Wi-Fi link/IP/signal/errors, Bluetooth, service, restarts, clock, LED service, phones, TV link, watcher, redirects. |
+| Red state (Pi unplugged) | 2026-10-25 16:26: within ~45 s the app showed a red "Can't reach the node" banner, a red "Node connection: No contact" row, a grey "Last seen 16:26" hero and every gauge grey with "No data"; nothing stayed green. |
+| Pi restart (power cut) | Boot to node API in 165 s (kernel 12 s + userspace 2 min 27 s). The node reconnected to the TV by itself, no TV prompt, no phone re-pairing. The phone app went back to blue on its own. Right after boot the dashboard showed amber "Clock: Not synced" and "CPU load: 2.59" (boot); both cleared within minutes (NTP synced, load 0.78). |
+| Watcher ownership | Pi active and enabled at boot; Mac LaunchAgent not loaded and disabled in launchd; phone in VNode mode with its watcher service not running. Backup is manual by design. |
 | Home redirect from the Pi (20 trials) | pending (owner at the TV) |
 | Mac asleep and phone away | pending |
-| Pi restart, router restart, TV cold boot | pending |
+| Router restart, TV cold boot | pending |
 | Multi-day run | pending |
 | Backup and restore | pending |
 

@@ -297,7 +297,7 @@ Results are blank on purpose. The orchestrator or the owner fills them in after 
 | Mac asleep, phone away | Put the Mac to sleep, take the phone off Wi-Fi, press Home on the TV from three apps | V/HOME opens each time | not run yet |
 | Internet down, LAN up | Unplug the router's internet cable, keep Wi-Fi on, press Home; use the app on Wi-Fi | Still works, no cloud needed | not run yet |
 | Router restart | Restart the router, wait for Wi-Fi | Node reconnects by itself, Home works again, no TV prompt | not run yet |
-| Pi restart | Use Restart Pi in the app | Back in about a minute, Watching, no re-pairing | not run yet |
+| Pi restart | Use Restart Pi in the app, or unplug and replug | Back in about 3 minutes, Watching, no re-pairing | Passed 2026-10-25 (power cut): API back at 165 s, TV reconnected, no prompts |
 | TV standby | Put the TV in standby, wake it, press Home | Redirect works after wake. This TV does not report its power state, so standby itself is not detected | not run yet |
 | TV cold boot | Switch the TV off at the wall, on again, press Home | Node reconnects, redirect works | not run yet |
 | 20 Home presses | 5 each from Netflix, YouTube, Prime Video, an HDMI input; record latency from `journalctl` | At least 19 of 20 redirected, none while inside an app or input | not run yet |
