@@ -1102,3 +1102,35 @@ class TestMainLoopTiming(Base):
                 W.run_once(cfg, pi, brain, self.ledger, True, sleep=lambda s: None)
             logging.getLogger("vnode-worker").info("sentinel")
         self.assertEqual(len([l for l in cm.output if "brain unreachable" in l]), 1)
+
+
+class UserAgentTest(unittest.TestCase):
+    """Cloudflare's bot protection 403s a request with no User-Agent, so every
+    Brain call must carry the worker's own."""
+
+    def test_every_brain_request_names_the_worker(self):
+        from vhome_companion.integrations.worker import brain_client as bc
+        seen = {}
+
+        class FakeResp:
+            status = 200
+            def read(self, n=-1):
+                return b'{"ok": true}'
+            def getheader(self, *a, **k):
+                return None
+
+        class FakeConn:
+            def request(self, method, path, body=None, headers=None):
+                seen.update(headers or {})
+            def getresponse(self):
+                return FakeResp()
+            def close(self):
+                pass
+
+        c = bc.BrainClient("http://127.0.0.1:8000", "t" * 32)
+        c._conn = lambda: FakeConn()
+        try:
+            c._req("GET", "/api/health")
+        except Exception:
+            pass
+        self.assertTrue(seen.get("User-Agent", "").startswith("vhome-worker/"))

@@ -22,6 +22,9 @@ LOGIN_REDIRECTS = (301, 302, 303, 307, 308)     # what Cloudflare Access answers
 _WHAT_KEYS = ("what", "detail", "message", "error")
 
 
+
+USER_AGENT = "vhome-worker/0.2 (+https://github.com/vineeth-arch/v-home)"
+
 class BrainError(Exception):
     def __init__(self, retryable: bool, status: int = 0, code: str = "", what: str = ""):
         super().__init__("brain %s %s" % (status, code))
@@ -114,7 +117,9 @@ class BrainClient:
         return http.client.HTTPConnection(self.host, self.port, timeout=self.timeout)
 
     def _req(self, method, path, body=None, key=None) -> dict:
-        headers = {"Authorization": "Bearer " + self.token, **self.cf}
+        # A named User-Agent: Cloudflare's bot protection answers 403 to requests
+        # with none (http.client sends none) or with a stock Python one.
+        headers = {"Authorization": "Bearer " + self.token, "User-Agent": USER_AGENT, **self.cf}
         data = None
         if body is not None:
             data = json.dumps(body).encode()
