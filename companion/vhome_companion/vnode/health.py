@@ -20,6 +20,7 @@ WIFI_ERRORS_WARN = 100
 
 HISTORY_INTERVAL_S = 30
 HISTORY_MAX = 120
+CPU_USE_WARN, CPU_USE_ERROR = 80, 95   # % busy between two health calls
 _HISTORY_KEYS = ("temp", "cpu_use", "load", "mem_used_mb", "wifi_dbm")
 
 _THROTTLE_NOW = ((0, "under-voltage", ERROR), (1, "ARM frequency capped", WARN),
@@ -266,7 +267,7 @@ def _pi(it, s):
         it.add(g, "voltage", "Core voltage", "%.2f V" % v, ERROR, "The power supply is too weak; use a 5 V 2.5 A supply.",
                metric=_metric(v, 0.8, 1.4, "V", nd=2))
     else:
-        it.add(g, "voltage", "Core voltage", "%.2f V" % v, INFO, metric=_metric(v, 0.8, 1.4, "V", nd=2))
+        it.add(g, "voltage", "Core voltage", "%.2f V" % v, OK, metric=_metric(v, 0.8, 1.4, "V", nd=2))
 
     ld = s.get("load")
     if ld is None:
@@ -287,7 +288,13 @@ def _pi(it, s):
     elif cu is None:
         it.unavailable(g, "cpu_use", "CPU use")
     else:
-        it.add(g, "cpu_use", "CPU use", "%.0f %%" % cu, INFO, metric=_metric(cu, 0, 100, "%"))
+        um = _metric(cu, 0, 100, "%", CPU_USE_WARN, CPU_USE_ERROR)
+        if cu >= CPU_USE_ERROR:
+            it.add(g, "cpu_use", "CPU use", "%.0f %%" % cu, ERROR, "The processor is maxed out; restart the service from the app.", metric=um)
+        elif cu >= CPU_USE_WARN:
+            it.add(g, "cpu_use", "CPU use", "%.0f %%" % cu, WARN, "The processor is very busy.", metric=um)
+        else:
+            it.add(g, "cpu_use", "CPU use", "%.0f %%" % cu, OK, metric=um)
 
     mhz, top = s.get("cpu_mhz"), s.get("cpu_max_mhz")
     if mhz is None:

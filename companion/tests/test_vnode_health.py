@@ -86,7 +86,7 @@ class PiThresholdTest(unittest.TestCase):
         h = health(throttled=0x1)
         self.assertEqual(item(h, "throttle_now")["detail"], "The power supply is too weak; use a 5 V 2.5 A supply.")
         self.assertEqual(item(h, "voltage")["level"], "error")
-        self.assertEqual(item(health(), "voltage")["level"], "info")
+        self.assertEqual(item(health(), "voltage")["level"], "ok")
         self.assertEqual(item(health(), "voltage")["value"], "1.35 V")
 
     def test_load(self):
@@ -232,7 +232,7 @@ class MetricTest(unittest.TestCase):
                          {"value": 2.0, "min": 0, "max": 4, "unit": "", "warn": 1.5, "error": 3.0, "higher_is_worse": True})
 
     def test_cpu_use_and_measuring(self):
-        self.assertEqual(self.metric("cpu_use"), {"value": 3.0, "min": 0, "max": 100, "unit": "%", "higher_is_worse": True})
+        self.assertEqual(self.metric("cpu_use"), {"value": 3.0, "min": 0, "max": 100, "unit": "%", "warn": 80, "error": 95, "higher_is_worse": True})
         self.assertNotIn("metric", item(health(cpu_use="measuring"), "cpu_use"))
 
     def test_cpu_freq_is_info_with_max(self):
@@ -326,6 +326,13 @@ class HwmonFallbackTest(unittest.TestCase):
         h = health(throttled=0, throttled_source="hwmon")
         item = next(i for i in h["items"] if i["key"] == "throttle_boot")
         self.assertEqual((item["value"], item["level"]), ("unavailable", "info"))
+
+
+
+class CpuUseLevelTest(unittest.TestCase):
+    def test_cpu_use_traffic_light(self):
+        for pct, level in ((79, "ok"), (80, "warn"), (94, "warn"), (95, "error")):
+            self.assertEqual(item(health(cpu_use=pct), "cpu_use")["level"], level, pct)
 
 
 if __name__ == "__main__":
