@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: companion/install-worker.sh fills in @COMPANION_DIR@ and @HOME@. Dry run by default;
+     the owner adds the live flag to ProgramArguments by hand after checking the dry-run log. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.designinnsaeit.vhome-int-worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>-m</string>
+    <string>vhome_companion.integrations.worker.main</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>@COMPANION_DIR@</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>@HOME@/Library/Logs/vhome-int-worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/Library/Logs/vhome-int-worker.log</string>
+</dict>
+</plist>
