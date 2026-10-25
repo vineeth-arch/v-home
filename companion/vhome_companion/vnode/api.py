@@ -157,7 +157,7 @@ async def version_middleware(request, handler):
 
 
 def _timeout_for(path):
-    return 13 if path == "/v1/tv/launch" else 6 if path == "/v1/tv/discover" else 5
+    return 13 if path in ("/v1/tv/launch", "/v1/health") else 6 if path == "/v1/tv/discover" else 5
 
 
 # ---- application -------------------------------------------------------------------------

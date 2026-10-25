@@ -47,6 +47,8 @@ ProtectHome=yes
 PrivateTmp=yes
 DevicePolicy=closed
 DeviceAllow=/dev/vchiq rw
+# Raspberry Pi OS 13 (kernel 6.18): vcgencmd talks to /dev/vcio_gencmd (root:video 0660), verified on the Pi.
+DeviceAllow=/dev/vcio_gencmd rw
 SupplementaryGroups=video
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

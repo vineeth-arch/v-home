@@ -22,13 +22,13 @@ POWER_ACTIONS = {
 THERMAL = "/sys/class/thermal/thermal_zone0/temp"
 HWMON_NAMES = "/sys/class/hwmon/hwmon*/name"  # the rpi_volt one exposes under-voltage (no vcgencmd: /dev/vchiq is blocked)
 LED_STALE_S = 60.0
-PROBE_TIMEOUT_S = 3.0
+PROBE_TIMEOUT_S = 10.0   # systemctl over D-Bus can take seconds on the single-core Zero
 PROBE_CACHE_S = 10.0   # vcgencmd / systemctl / ip readings are reused for this long (monotonic)
 PROBES = {
     "throttled": ["/usr/bin/vcgencmd", "get_throttled"],
     "volts": ["/usr/bin/vcgencmd", "measure_volts", "core"],
-    "restarts": ["systemctl", "show", "vhome-vnode", "-p", "NRestarts", "--value"],
-    "leds_unit": ["systemctl", "show", "vhome-leds", "-p", "ActiveState", "--value"],
+    "restarts": ["systemctl", "--no-pager", "--no-ask-password", "show", "vhome-vnode", "-p", "NRestarts", "--value"],
+    "leds_unit": ["systemctl", "--no-pager", "--no-ask-password", "show", "vhome-leds", "-p", "ActiveState", "--value"],
 }
 
 
@@ -144,13 +144,15 @@ class Device:
         now = self._clock()
         hit = self._probe_cache.get(name)
         if hit is None or now - hit[0] >= PROBE_CACHE_S:
+            t0 = time.monotonic()
             try:
                 rc, out = await self._run_out(list(PROBES[name]))
             except Exception as e:  # noqa: BLE001 - a missing binary is just "unavailable"
                 rc, out = -1, f"{type(e).__name__}: {e}"
             if rc != 0 and name not in self._probe_warned:   # once per probe, so the reason is visible
                 self._probe_warned.add(name)
-                log.warning("health probe %s failed (rc %s): %s", name, rc, contracts.redact(out.strip())[:200])
+                log.warning("health probe %s failed (rc %s, %.1f s): %s", name, rc, time.monotonic() - t0,
+                            contracts.redact(out.strip())[:200])
             hit = self._probe_cache[name] = (now, out if rc == 0 else None)
         return hit
 
