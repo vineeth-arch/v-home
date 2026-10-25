@@ -135,6 +135,8 @@ object InboxRules {
         "duplicate", "expired" -> "Request expired, try again"
         else -> when (http) {
             401 -> "Phone not paired"
+            // ponytail: a VNode without the inbox answers 404 on every inbox route; a vanished job id reads the same way
+            404 -> "VNode doesn't have the Inbox yet. Update VNode with --with-integrations."
             413 -> errorMessage(null, "too_large")
             415 -> errorMessage(null, "unsupported_kind")
             429 -> errorMessage(null, "rate_limited")

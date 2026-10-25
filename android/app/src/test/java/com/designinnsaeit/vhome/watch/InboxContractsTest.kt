@@ -50,6 +50,7 @@ class InboxContractsTest {
         assertEquals(InboxRules.errorMessage(null, "unsupported_kind"), InboxRules.errorMessage(415, null))
         assertTrue(InboxRules.errorMessage(409, "key_conflict").contains("different text"))
         assertEquals("Not delivered (HTTP 500)", InboxRules.errorMessage(500, null))
+        assertEquals("VNode doesn't have the Inbox yet. Update VNode with --with-integrations.", InboxRules.errorMessage(404, "not_found"))
         assertEquals("Not delivered (HTTP ?)", InboxRules.errorMessage(null, null))
     }
 
