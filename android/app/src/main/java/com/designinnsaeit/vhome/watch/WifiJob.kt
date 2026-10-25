@@ -16,7 +16,7 @@ import android.os.Build
  */
 class WifiJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
-        if (Prefs.load(this).pin == null) return false
+        if (Prefs.mode(this) == ControllerMode.VNODE || Prefs.load(this).pin == null) return false
         EventLog.add(this, "Wi-Fi job: on Wi-Fi, starting watcher")
         startWatcher(this, "Wi-Fi job")
         return false
@@ -41,7 +41,7 @@ class WifiJob : JobService() {
 /** Safety net: every 15 min, if paired and the service is gone (killed, swiped, never restarted), start it. */
 class WatchdogJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
-        if (Prefs.load(this).pin != null && !WatcherService.running) {
+        if (Prefs.mode(this) == ControllerMode.STANDALONE && Prefs.load(this).pin != null && !WatcherService.running) {
             EventLog.add(this, "watchdog: service not running, starting it")
             startWatcher(this, "watchdog")
         }

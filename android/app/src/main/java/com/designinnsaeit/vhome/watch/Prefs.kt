@@ -24,6 +24,15 @@ object Prefs {
     fun ssapManifest(ctx: Context): JSONObject =
         JSONObject(ctx.assets.open("manifest.json").bufferedReader().use { it.readText() })
 
+    /** Who watches the TV. Stored beside the standalone settings; [save] leaves it alone. */
+    fun mode(ctx: Context): ControllerMode =
+        runCatching { ControllerMode.valueOf(ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString("controller_mode", null) ?: "") }
+            .getOrDefault(ControllerMode.STANDALONE)
+
+    fun setMode(ctx: Context, mode: ControllerMode) {
+        ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().putString("controller_mode", mode.name).apply()
+    }
+
     fun save(ctx: Context, c: Config) {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
             .putString("host", c.host)

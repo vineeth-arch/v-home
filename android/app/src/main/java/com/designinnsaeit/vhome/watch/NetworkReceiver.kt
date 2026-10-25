@@ -8,6 +8,7 @@ import android.util.Log
 class NetworkReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (Prefs.load(context).pin == null) return // not paired yet
+        if (Prefs.mode(context) == ControllerMode.VNODE) return // the node watches; this phone stays quiet
         EventLog.add(context, "Wi-Fi joined: starting watcher")
         try {
             context.startForegroundService(Intent(context, WatcherService::class.java))

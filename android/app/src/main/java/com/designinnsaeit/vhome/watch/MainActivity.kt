@@ -59,6 +59,12 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Prefs.mode(this) == ControllerMode.VNODE) {
+            // The node watches; this screen is only for standalone mode.
+            startActivity(Intent(this, NodeActivity::class.java))
+            finish()
+            return
+        }
         EventLog.installCrashHandler(this)
         setContentView(R.layout.activity_main)
         HomeNetwork.register(this)
@@ -84,6 +90,11 @@ class MainActivity : Activity() {
         doubleHomeSwitch.isChecked = c.doubleHomeEscape
         doubleHomeSwitch.setOnCheckedChangeListener { _, _ -> save() }
 
+        findViewById<Button>(R.id.controllerButton).setOnClickListener {
+            startActivity(Intent(this, NodeActivity::class.java).apply {
+                if (NodeStore(this@MainActivity).isPaired()) putExtra(NodeActivity.EXTRA_ENABLE, true)
+            })
+        }
         findViewById<Button>(R.id.stepPairButton).setOnClickListener { pair(stepHostField, stepResult) }
         findViewById<Button>(R.id.pairButton).setOnClickListener { pair(hostField, tvResult) }
         findViewById<Button>(R.id.testButton).setOnClickListener { testTv() }

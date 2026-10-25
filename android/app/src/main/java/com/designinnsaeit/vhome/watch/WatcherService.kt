@@ -91,6 +91,12 @@ class WatcherService : Service() {
         val action = intent?.action
         EventLog.add(this, "service start (${action ?: "watch"}; loop ${if (tvJob == null) "idle" else "running"})")
         startAsForeground()
+        if (Prefs.mode(this) == ControllerMode.VNODE) {
+            // The node watches. Android requires startForeground() after startForegroundService(), so show, then leave.
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         resumeIfDue()
         when (action) {
             Notify.ACTION_PAUSE -> setPaused(true, intent.getIntExtra(WatchStatus.EXTRA_MINUTES, 0))
@@ -155,6 +161,7 @@ class WatcherService : Service() {
     }
 
     private fun startTv() {
+        if (Prefs.mode(this) == ControllerMode.VNODE) return
         synchronized(this) {
             if (tvJob?.isActive == true) return
             val cfg = Prefs.load(this)

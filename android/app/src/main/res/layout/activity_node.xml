@@ -1,0 +1,598 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/paper"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="40dp">
+
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="20dp"
+            android:paddingTop="24dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="20dp"
+            android:text="@string/node_title" />
+
+        <View style="@style/Rule" />
+
+        <TextView
+            android:id="@+id/notice"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/yellow"
+            android:padding="20dp"
+            android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/setupSection"
+        style="@style/Section">
+
+        <TextView
+            android:id="@+id/setupTitle"
+            style="@style/T.Title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp" android:text="@string/node_setup_title" />
+        <TextView
+            android:id="@+id/setupExplain"
+            style="@style/T.Dim"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:text="@string/node_setup_explain" />
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="30dp"
+            android:text="@string/node_found_label" />
+        <LinearLayout
+            android:id="@+id/nodeList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:divider="@drawable/hairline"
+            android:orientation="vertical"
+            android:showDividers="middle" />
+        <TextView
+            android:id="@+id/nodeListHint"
+            style="@style/T.Dim"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" android:text="@string/node_looking" />
+        <TextView
+            style="@style/FieldLabel"
+            android:layout_marginTop="24dp"
+            android:labelFor="@+id/hostField"
+            android:text="@string/node_host_label" />
+        <EditText
+            android:id="@+id/hostField"
+            style="@style/Field"
+            android:hint="@string/node_host_hint"
+            android:importantForAutofill="no" />
+        <Button
+            android:id="@+id/connectButton"
+            style="@style/Btn.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/node_connect" />
+        <TextView
+            android:id="@+id/setupResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+        <Button
+            android:id="@+id/usePhoneFromSetup"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/node_use_phone"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/fpSection"
+        style="@style/Section" 
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/fpTitle"
+            style="@style/T.Title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp" android:text="@string/node_fp_title" />
+        <TextView
+            android:id="@+id/fpText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@color/paper_2"
+            android:fontFamily="monospace"
+            android:padding="16dp"
+            android:textColor="@color/ink"
+            android:textIsSelectable="false"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/fpAsk"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp" android:text="@string/node_fp_ask" />
+        <Button
+            android:id="@+id/fpMatch"
+            style="@style/Btn.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/node_fp_match" />
+        <Button
+            android:id="@+id/fpNoMatch"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_fp_nomatch" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/codeSection"
+        style="@style/Section" 
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/codeTitle"
+            style="@style/T.Title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp" android:text="@string/node_code_title" />
+        <TextView
+            android:id="@+id/codeExplain"
+            style="@style/T.Dim"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:text="@string/node_code_explain" />
+        <TextView
+            style="@style/FieldLabel"
+            android:labelFor="@+id/codeField"
+            android:text="@string/node_code_label" />
+        <EditText
+            android:id="@+id/codeField"
+            style="@style/Field"
+            android:digits="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789- "
+            android:fontFamily="monospace"
+            android:hint="@string/node_code_hint"
+            android:importantForAutofill="no"
+            android:inputType="textCapCharacters|textNoSuggestions|textVisiblePassword"
+            android:maxLength="12"
+            android:textSize="24sp" />
+        <TextView
+            style="@style/FieldLabel"
+            android:labelFor="@+id/nameField"
+            android:text="@string/node_name_label" />
+        <EditText
+            android:id="@+id/nameField"
+            style="@style/Field"
+            android:inputType="textPersonName" />
+        <Button
+            android:id="@+id/pairButton"
+            style="@style/Btn.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/node_pair" />
+        <TextView
+            android:id="@+id/codeResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/statusSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/heroBlock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/blue"
+            android:minHeight="176dp"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:id="@+id/heroTitle"
+                style="@style/T.Title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite" />
+
+            <TextView
+                android:id="@+id/heroDetail"
+                style="@style/T.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" />
+        </LinearLayout>
+
+    <View style="@style/Rule" />
+
+    <LinearLayout
+        android:id="@+id/actionsSection"
+        style="@style/Section">
+
+        <TextView
+            android:id="@+id/heroExplain"
+            style="@style/T.Dim"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp" />
+        <TextView
+            android:id="@+id/updatedText"
+            style="@style/T.Small"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColor="@color/text_dim" />
+        <Button
+            android:id="@+id/launchButton"
+            style="@style/Btn.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/node_launch" />
+        <Button
+            android:id="@+id/resumeButton"
+            style="@style/Btn.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_resume"
+            android:visibility="gone" />
+        <Button
+            android:id="@+id/turnOnButton"
+            style="@style/Btn.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_turn_on"
+            android:visibility="gone" />
+        <Button
+            android:id="@+id/pauseButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_pause" />
+        <TextView
+            android:id="@+id/actionResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <View style="@style/Rule" />
+
+    <LinearLayout
+        android:id="@+id/cardTvSection"
+        style="@style/Section">
+
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="@string/node_section_tv" />
+        <LinearLayout
+            android:id="@+id/cardTv"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:divider="@drawable/hairline"
+            android:orientation="vertical"
+            android:showDividers="middle" />
+        <Button
+            android:id="@+id/tvPairToggle"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/node_tv_pair" />
+        <LinearLayout
+            android:id="@+id/tvPairBody"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+            <TextView
+                style="@style/FieldLabel"
+                android:labelFor="@+id/tvHostField"
+                android:text="@string/node_tv_host_label" />
+            <EditText
+                android:id="@+id/tvHostField"
+                style="@style/Field"
+                android:hint="@string/hint_tv_ip"
+                android:importantForAutofill="no" />
+            <CheckBox
+                android:id="@+id/repinCheck"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:minHeight="48dp"
+                android:text="@string/node_repin"
+                android:textColor="@color/ink"
+                android:textSize="16sp"
+                android:visibility="gone" />
+        <Button
+            android:id="@+id/tvPairButton"
+            style="@style/Btn.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_tv_pair_go" />
+        <TextView
+            android:id="@+id/tvPairResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View style="@style/Rule" />
+
+    <LinearLayout
+        android:id="@+id/cardWatcherSection"
+        style="@style/Section">
+
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="@string/node_section_watcher" />
+        <LinearLayout
+            android:id="@+id/cardWatcher"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:divider="@drawable/hairline"
+            android:orientation="vertical"
+            android:showDividers="middle" />
+    </LinearLayout>
+
+    <View style="@style/Rule" />
+
+    <LinearLayout
+        android:id="@+id/cardPiSection"
+        style="@style/Section">
+
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="@string/node_section_pi" />
+        <LinearLayout
+            android:id="@+id/cardPi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:divider="@drawable/hairline"
+            android:orientation="vertical"
+            android:showDividers="middle" />
+        <TextView
+            android:id="@+id/piStale"
+            style="@style/T.Dim"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:visibility="gone" />
+        <LinearLayout
+            android:id="@+id/ledGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical">
+            <Switch
+                android:id="@+id/ledSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/node_leds_on"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+            <TextView
+                style="@style/T.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/node_brightness" />
+            <LinearLayout
+                android:id="@+id/brightnessRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal" />
+        <Button
+            android:id="@+id/ledApply"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_leds_apply" />
+        </LinearLayout>
+        <Button
+            android:id="@+id/restartServiceButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/node_restart_service" />
+        <Button
+            android:id="@+id/rebootButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_reboot" />
+        <Button
+            android:id="@+id/shutdownButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_shutdown" />
+        <TextView
+            android:id="@+id/piResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <View style="@style/Rule" />
+
+    <LinearLayout
+        android:id="@+id/diagSection"
+        style="@style/Section">
+
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="@string/node_section_diag" />
+        <Button
+            android:id="@+id/diagButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_diag_run" />
+        <ScrollView
+            android:id="@+id/diagScroll"
+            android:layout_width="match_parent"
+            android:layout_height="320dp"
+            android:layout_marginTop="10dp"
+            android:background="@color/paper_2"
+            android:nestedScrollingEnabled="true"
+            android:padding="12dp"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/diagText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textColor="@color/ink"
+                android:textIsSelectable="true"
+                android:textSize="12sp" />
+        </ScrollView>
+        <Button
+            android:id="@+id/diagCopy"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_copy"
+            android:visibility="gone" />
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/node_phones_label" android:visibility="gone"
+            android:id="@+id/phonesLabel" />
+        <LinearLayout
+            android:id="@+id/phonesList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:divider="@drawable/hairline"
+            android:orientation="vertical"
+            android:showDividers="middle" />
+        <TextView
+            android:id="@+id/phonesResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <View style="@style/Rule" />
+
+    <LinearLayout
+        android:id="@+id/controllerSection"
+        style="@style/Section">
+
+        <TextView
+            style="@style/T.Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="@string/node_section_controller" />
+        <TextView
+            android:id="@+id/controllerExplain"
+            style="@style/T.Dim"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:text="@string/node_controller_explain" />
+        <Button
+            android:id="@+id/usePhoneButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/node_use_phone" />
+        <Button
+            android:id="@+id/forgetButton"
+            style="@style/Btn.Ghost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/node_forget" />
+        <TextView
+            android:id="@+id/controllerResult"
+            style="@style/T.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:drawablePadding="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    </LinearLayout>
+    </LinearLayout>
+</ScrollView>

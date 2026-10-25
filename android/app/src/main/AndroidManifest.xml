@@ -28,6 +28,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".NodeActivity"
+            android:exported="false" />
+
         <service
             android:name=".WatcherService"
             android:exported="false"

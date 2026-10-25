@@ -26,6 +26,46 @@
 
         <View style="@style/Rule" />
 
+        <!-- Who watches the TV: this phone, or the V/HOME node. -->
+        <LinearLayout
+            style="@style/Section"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/T.Label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/controller_row_label" />
+
+                <TextView
+                    style="@style/T.Dim"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/controller_row_this" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/controllerButton"
+                style="@style/Btn.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:maxWidth="160dp"
+                android:text="@string/controller_row_node" />
+        </LinearLayout>
+
+        <View style="@style/Rule" />
+
         <!-- First run: three numbered steps replace the status hero until the TV is paired. -->
         <LinearLayout
             android:id="@+id/firstRun"

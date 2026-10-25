@@ -6,7 +6,7 @@ import android.content.Intent
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (Prefs.load(context).pin != null) startWatcher(context, "boot/update")
+        if (Prefs.mode(context) == ControllerMode.STANDALONE && Prefs.load(context).pin != null) startWatcher(context, "boot/update")
         HomeNetwork.register(context)
         WatchdogJob.arm(context)
     }
