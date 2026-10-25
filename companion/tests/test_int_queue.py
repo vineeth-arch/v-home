@@ -339,6 +339,18 @@ class LifecycleTests(Base):
         self.assertEqual((f["status"], f["error_code"]), ("failed", "X"))
         self.assertEqual(self.code(self.q.reconcile, d["id"], d["claim_token"], "bogus"), Err.BAD_REQUEST)
 
+    def test_reconcile_requeue_with_error_keeps_attempts_and_shows_reason(self):
+        a = self.claimed(0)
+        r = self.q.reconcile(a["id"], a["claim_token"], "requeue", error_code="brain_access_blocked",
+                             error_msg="Brain's login page is blocking VNode. token=sekret")
+        self.assertEqual((r["status"], r["attempts"], r["claim_token"]), ("queued", 0, None))
+        self.assertEqual(r["error_code"], "brain_access_blocked")
+        self.assertIn("login page", r["error_msg"])
+        self.assertNotIn("sekret", r["error_msg"])
+        b = self.q.claim(P, "w")                     # immediately claimable again, nothing burned
+        self.assertEqual((b["id"], b["attempts"]), (a["id"], 0))
+        self.assertEqual(self.q.reconcile(b["id"], b["claim_token"], "requeue")["error_code"], "brain_access_blocked")
+
     def test_illegal_transition_is_a_bug(self):
         j = self.sub(0)
         with self.assertRaises(RuntimeError):

@@ -1,0 +1,65 @@
+[Unit]
+Description=V/HOME inbox delivery worker (optional: runs on the Pi so delivery works with the Mac off)
+# Not tied to vhome-vnode or vhome-integrations: if the socket is missing the worker logs it and retries on the next poll.
+# network-online + time-sync: Brain is reached over https from here, and a Pi Zero has no RTC (the worker also checks the clock itself).
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+# Its own user, not vhome-int: it holds the Brain token and talks to the internet, so it must not be able to read the queue
+# database or payload files (vhome-int, 0700). Group vhome-intsock is all it needs to open int.sock (0660) and nothing else.
+User=vhome-deliver
+Group=vhome-intsock
+Environment=PYTHONPATH=/opt/vhome-vnode/current
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# 0600 root:root, written by install-pi.sh --with-worker; systemd reads it as root, the service user cannot.
+# Holds the Brain token (and the Access service token if used).
+EnvironmentFile=/etc/vhome-int/deliver.env
+ExecStart=/usr/bin/python3 -m vhome_companion.integrations.worker.main --live --from-env
+# /var/lib/vhome-int-deliver holds only the delivery ledger (delivered.db).
+StateDirectory=vhome-int-deliver
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=10
+RestartSteps=5
+RestartMaxDelaySec=300
+RestartPreventExitStatus=78
+TimeoutStopSec=10
+KillSignal=SIGTERM
+UMask=0077
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+# Resource limits: the TV controller always wins on a one-core Pi Zero W.
+MemoryMax=48M
+CPUQuota=40%
+TasksMax=16
+Nice=15
+IOWeight=10
+
+# Hardening: same block as vhome-integrations.service (sockets are the unix socket plus outbound https to Brain), plus
+# what costs nothing here. MemoryDenyWriteExecute is left out on purpose: not testable on the Pi, and a JIT or ctypes
+# user in the Python stack would die at start. systemd on the Pi is 257, so every directive below exists.
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+SystemCallFilter=@system-service
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+DevicePolicy=closed
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

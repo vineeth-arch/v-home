@@ -1,4 +1,7 @@
-"""Mac worker -> Pi client. Stdlib only. One TLS connection per request, pinned by cert sha256."""
+"""Worker -> Pi client. Stdlib only. One connection per request.
+
+PiClient: TLS to the node, pinned by cert sha256 (Mac worker).
+UnixPiClient: the node's own int.sock (worker running on the Pi): same methods, no TLS, no proxy."""
 from __future__ import annotations
 
 import hashlib
@@ -124,3 +127,36 @@ class PiClient:
             body["error_code"] = error_code
             body["error_msg"] = contracts.redact(error_msg or "")[:contracts.MAX_ERROR_MSG]
         self._req("POST", "reconcile", body)
+
+
+class _UnixConn(http.client.HTTPConnection):
+    def __init__(self, path: str, timeout: float):
+        super().__init__("localhost", timeout=timeout)
+        self._path = path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        try:
+            self.sock.connect(self._path)
+        except OSError:
+            self.sock.close()
+            raise
+
+
+class UnixPiClient(PiClient):
+    """Same surface as PiClient. The unix socket (0660, group vhome-intsock) is the trust boundary, so no pin;
+    the worker bearer token is still checked by the service. Skips the TLS handshake (slow on a Pi Zero W) and the
+    HTTP proxy's 2-slot semaphore, breaker and shared auth-failure limiter."""
+
+    def __init__(self, path: str, token: str, timeout: float = TIMEOUT_S):
+        self.path, self.token, self.timeout = path, token, timeout
+
+    def _connect(self):
+        conn = _UnixConn(self.path, self.timeout)
+        try:
+            conn.connect()
+        except OSError as e:
+            conn.close()
+            raise PiError(0, "unreachable:%s" % type(e).__name__) from None
+        return conn

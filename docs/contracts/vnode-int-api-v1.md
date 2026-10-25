@@ -9,6 +9,7 @@ All errors use the v1 envelope `{"error": code, "detail": str, ...}` with codes 
 ```
 phone --TLS pin + phone Bearer--> vhome-vnode :8443 --(intproxy)--> unix socket --> vhome-integrations
 Mac worker --TLS pin + worker Bearer--> vhome-vnode :8443 /v1/int/worker/* --(intproxy)--> same socket
+Pi worker (vhome-int-deliver) --worker Bearer--> same unix socket directly (no TLS, no proxy); same routes and bodies
 ```
 
 ### Proxy (inside vhome-vnode, `vnode/intproxy.py`)
@@ -42,7 +43,7 @@ Submit errors: 400 bad payload/key, 409 `key_conflict`, 413, 415, 429 `rate_limi
 
 `Counts`: `{"queued","claimed","processing","unknown","completed","failed","cancelled"}`.
 
-`BrainStatus`: `{"snapshot": object|null, "snapshot_age_s": int|null, "stale": bool, "worker_last_seen_age_s": int|null, "worker_stale": bool, "queue": Counts}`. `stale` is true when no snapshot or older than `SNAPSHOT_STALE_S`. UI labels the snapshot "reported by Mac worker". Status `completed` means "accepted into Brain inbox", never "processed".
+`BrainStatus`: `{"snapshot": object|null, "snapshot_age_s": int|null, "stale": bool, "worker_last_seen_age_s": int|null, "worker_stale": bool, "queue": Counts}`. `stale` is true when no snapshot or older than `SNAPSHOT_STALE_S`. UI labels the snapshot "reported by the delivery worker" (it may run on the Pi or the Mac). Status `completed` means "accepted into Brain inbox", never "processed".
 
 ## Worker routes (Bearer worker token)
 
@@ -61,13 +62,17 @@ Submit errors: 400 bad payload/key, 409 `key_conflict`, 413, 415, 429 `rate_limi
 `WorkJob`: `{"id","op","kind","idempotency_key","label","created_at","attempts","payload_sha256","payload_bytes","claim_token","status"}`. Wrong claim token = 409 `stale_claim`. A job from another project = 404.
 
 ## Delivery rules (Mac worker)
-- text -> Brain `POST /api/capture {"text"}`; url -> `{"url","insight"?: label}`; both with `Authorization: Bearer $BRAIN_VNODE_TOKEN` and `X-Capture-Key: <idempotency_key>`. `result_ref` = Brain note id.
+- text -> Brain `POST /api/capture {"text"}`; url -> `{"url","insight"?: label}`; both with `Authorization: Bearer $BRAIN_VNODE_TOKEN` and `X-Capture-Key: <idempotency_key>`. `result_ref` = Brain note id. `CF-Access-Client-Id` / `CF-Access-Client-Secret` are added to every Brain call when configured.
+- Brain URL: `http` to loopback only, or `https` to exactly the host in `BRAIN_ALLOW_HOST` (default certificate verification).
 - Snapshot posted to `/brain-status` (flat): `{"reachable","heartbeat","pending","processed_today","needs_review","failed","last_note_id","at","mode":"dry_run"|"live","auth_error":bool}`.
-- Brain 401/403/404/408/429/5xx/connection errors are retryable and stop the pass (401/403 also set `auth_error`); 400/413/422 are not retryable.
-- md/txt -> file `<inbox_path>/<YYYY-MM-DD from created_at> vnode-<key[:16]>.<ext>`, written O_EXCL via temp + rename in the same dir; existing file with same sha256 = already delivered. Ledger `~/.vhome-int/delivered.db` records intent before, delivered after. `result_ref` = filename.
-- On wake: `GET unknown` -> reconcile each (ledger says delivered -> complete; else text/url -> requeue (Brain dedupes by key); doc -> check file) -> then claim loop: 1 job/s, max 20 per run.
+- Brain 301/302/303/307/308 (Cloudflare Access login redirect, never followed) or a 200 HTML login page = `access_blocked` (sets `auth_error`); other 3xx are `brain_http_<n>`. Any 3xx/401/403/404/408/429/5xx/connection error is environmental: the worker does `reconcile action=requeue` with `error_code` and a plain `error_msg` (attempts unchanged, the reason is kept on the queued job) and stops the pass; it never calls `fail` for these, except the same job getting Brain 5xx/404/408/429/`bad_json` on 8 consecutive passes (worker memory), which calls `fail` with `retryable:true` and a fixed message. Only 400/413/422 call `fail` with `retryable:false`.
+- `error_code` values the phone maps: `brain_http_401`, `brain_http_403`, `access_blocked`, `brain_http_<5xx>`, `brain_http_<other>`, `name_conflict`, `write_failed`, `bad_payload`, `bad_job`. `error_msg` is a plain sentence (retryable statuses other than 5xx read "Brain didn't take this yet — VNode will try again."), then optionally " Brain said: <60 chars of Brain's `what`, redacted>".
+- `/api/status` is not a gate for claiming: only a dead transport to Brain skips the claim loop. A successful capture corrects the snapshot (`reachable` true, `auth_error` false). Snapshot `reachable` is false only for no answer, 404, 408 or 5xx; a login redirect or 401/403 gives `reachable` true, `auth_error` true.
+- md/txt without `BRAIN_INBOX_PATH` -> Brain `POST /api/capture {"text": <content>}` with `X-Capture-Key: <idempotency_key>`; a sanitized label is prepended as `# label` only when the content has no markdown heading. `result_ref` = Brain note id.
+- md/txt with `BRAIN_INBOX_PATH` -> file `<inbox_path>/<YYYY-MM-DD from created_at> vnode-<key[:16]>.<ext>`, written O_EXCL via temp + rename in the same dir; existing file with same sha256 = already delivered. Ledger `~/.vhome-int/delivered.db` records intent before, delivered after. `result_ref` = filename.
+- On wake: `GET unknown` -> reconcile each (ledger says delivered -> complete; else text/url -> requeue (Brain dedupes by key); doc -> check file when an inbox path is set, otherwise requeue) -> then claim loop: 1 job/s, `WORKER_MAX_PER_RUN` per run (default and cap 20; the Pi unit uses 5), poll every `WORKER_POLL_S` (default 30; the Pi unit uses 60; backs off to at most 150 s while Brain is in trouble, always below `WORKER_STALE_S`; a heartbeat is sent every cycle, including while waiting for the clock). With `WAIT_CLOCK_SYNC=1` no pass runs until `/run/systemd/timesync/synchronized` exists.
 - Default `dry_run`: claim one job, log what would be done (id, kind, size), then `reconcile action=requeue` (claimed -> queued, attempts unchanged); never touches Brain. `--live` required to deliver. Heartbeat and brain-status are sent in both modes.
-- `reconcile` accepts jobs in claimed, processing or unknown.
+- `reconcile` accepts jobs in claimed, processing or unknown. `action=requeue` may carry `error_code`/`error_msg`; they are stored (redacted, 200 chars) on the queued job and attempts are not counted (except the existing unknown-state rule).
 
 ## Pi admin CLI `vnode-int` (admin socket 0600, run as vhome-int)
 `stats`, `jobs [--status S]`, `show ID`, `recover --requeue|--fail ID --yes`, `purge --terminal --yes`, `worker-token create|list|revoke ID`, `vacuum`. Tokens are printed once at create and stored only as sha256.

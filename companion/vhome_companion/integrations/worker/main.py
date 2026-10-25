@@ -1,6 +1,8 @@
-"""VNode Mac worker: polls the Pi (outbound TLS only), delivers Brain capture jobs locally.
+"""VNode delivery worker: polls the node for inbox jobs and hands them to Brain.
 
-Dry run by default; --live delivers. Stdlib only (runs on the macOS system python3)."""
+Two homes, same code. Mac: polls the Pi over pinned TLS, delivers to Brain on loopback (and may write docs to the
+vault inbox folder). Pi: polls its own int.sock (VNODE_SOCKET), delivers to Brain over https with docs sent as text.
+Dry run by default; --live delivers. Stdlib only (macOS system python3 and the Pi's python3)."""
 from __future__ import annotations
 
 import argparse
@@ -10,17 +12,21 @@ import os
 import re
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import time
 
 from .. import contracts
 from ..contracts import Kind
-from .brain_client import BrainClient, BrainError, parse_url, stops_pass
+from .brain_client import BrainClient, BrainError, explain, parse_url, stops_pass
 from .ledger import Ledger
-from .pi_client import PayloadMismatch, PinMismatch, PiClient, PiError
+from .pi_client import PayloadMismatch, PinMismatch, PiClient, PiError, UnixPiClient
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+CLOCK_CHECK_S = 30.0
+BACKOFF_CAP_S = 150.0          # below contracts.WORKER_STALE_S (180): "Mac not reporting" must not show for a live worker
+CLOCK_SYNC_FILE = "/run/systemd/timesync/synchronized"   # systemd-timesyncd; same signal the node service uses
 log = logging.getLogger("vnode-worker")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -39,21 +45,44 @@ class Config:
     def __init__(self, env: dict):
         g = lambda k, d="": (env.get(k) or d).strip()
         self.host, self.port = g("VNODE_HOST", "vnode.local"), int(g("VNODE_PORT", "8443") or 8443)
+        self.socket = g("VNODE_SOCKET")             # set on the Pi: talk to the node's unix socket instead of TLS
         self.node_id, self.pi_token = g("VNODE_NODE_ID").lower(), g("VNODE_WORKER_TOKEN")
         self.brain_url, self.brain_token = g("BRAIN_URL", "http://127.0.0.1:8000"), g("BRAIN_VNODE_TOKEN")
-        self.inbox = g("BRAIN_INBOX_PATH")
-        missing = [k for k, v in (("VNODE_NODE_ID", self.node_id), ("VNODE_WORKER_TOKEN", self.pi_token),
-                                  ("BRAIN_VNODE_TOKEN", self.brain_token), ("BRAIN_INBOX_PATH", self.inbox)) if not v]
-        if missing:
-            raise ConfigError("worker.env is missing: " + ", ".join(missing))
-        if not re.fullmatch(r"[0-9a-f]{64}", self.node_id):
-            raise ConfigError("VNODE_NODE_ID must be 64 hex chars (sha256 of the node cert DER)")
-        if not os.path.isabs(self.inbox):
-            raise ConfigError("BRAIN_INBOX_PATH must be an absolute path")
+        self.allow_host = g("BRAIN_ALLOW_HOST").lower()
+        self.cf_id, self.cf_secret = g("CF_ACCESS_CLIENT_ID"), g("CF_ACCESS_CLIENT_SECRET")
+        self.inbox = g("BRAIN_INBOX_PATH")          # optional: unset = docs go to Brain as text over the API
+        self.name = g("WORKER_NAME", "mac-worker")[:30]
+        self.wait_clock = g("WAIT_CLOCK_SYNC") == "1"
         try:
-            parse_url(self.brain_url)
+            self.poll_s = max(10.0, float(g("WORKER_POLL_S", str(contracts.WORKER_POLL_S))))
+            self.max_per_run = min(contracts.WORKER_MAX_PER_RUN, max(1, int(g("WORKER_MAX_PER_RUN", str(contracts.WORKER_MAX_PER_RUN)))))
+        except ValueError:
+            raise ConfigError("WORKER_POLL_S / WORKER_MAX_PER_RUN must be numbers") from None
+        missing = [k for k, v in (("VNODE_NODE_ID", self.node_id or self.socket), ("VNODE_WORKER_TOKEN", self.pi_token),
+                                  ("BRAIN_VNODE_TOKEN", self.brain_token)) if not v]
+        if missing:
+            raise ConfigError("worker env is missing: " + ", ".join(missing))
+        if not self.socket and not re.fullmatch(r"[0-9a-f]{64}", self.node_id):
+            raise ConfigError("VNODE_NODE_ID must be 64 hex chars (sha256 of the node cert DER)")
+        if self.socket and not os.path.isabs(self.socket):
+            raise ConfigError("VNODE_SOCKET must be an absolute path")
+        if self.inbox and not os.path.isabs(self.inbox):
+            raise ConfigError("BRAIN_INBOX_PATH must be an absolute path")
+        if bool(self.cf_id) != bool(self.cf_secret):
+            raise ConfigError("set both CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET, or neither")
+        try:
+            parse_url(self.brain_url, self.allow_host)
         except ValueError as e:
             raise ConfigError(str(e)) from None
+
+    def pi_client(self):
+        if self.socket:
+            return UnixPiClient(self.socket, self.pi_token)
+        return PiClient(self.host, self.port, self.node_id, self.pi_token)
+
+    def brain_client(self):
+        return BrainClient(self.brain_url, self.brain_token, cf_id=self.cf_id, cf_secret=self.cf_secret,
+                           allow_host=self.allow_host)
 
 
 def load_config(path: str | None = None) -> Config:
@@ -129,15 +158,26 @@ def _deliver_doc(inbox: str, job: dict, payload: bytes) -> str:
     return os.path.basename(target)
 
 
+_HEADING = re.compile(r"^#{1,6}\s", re.M)
+
+
+def doc_as_text(text: str, job: dict) -> str:
+    """Documents travel as plain capture text. Content untouched, except a label becomes the title when there is none."""
+    label = contracts.sanitize_label(job.get("label"))
+    return text if not label or _HEADING.search(text) else "# %s\n\n%s" % (label, text)
+
+
 def deliver(cfg: Config, brain: BrainClient, job: dict, payload: bytes) -> str:
     kind = Kind(job["kind"])
-    if kind in (Kind.MD, Kind.TXT):
+    if kind in (Kind.MD, Kind.TXT) and cfg.inbox:
         return deliver_doc(cfg.inbox, job, payload)
     try:
         text = payload.decode("utf-8")
     except UnicodeDecodeError:
         raise Delivery("bad_payload", False) from None
     key = contracts.validate_key(job.get("idempotency_key"))
+    if kind in (Kind.MD, Kind.TXT):                  # no inbox folder here: Brain has no file route, send the text
+        return brain.capture_text(doc_as_text(text, job), key)
     if kind is Kind.TEXT:
         return brain.capture_text(text, key)
     return brain.capture_url(text.strip(), contracts.sanitize_label(job.get("label")) or None, key)
@@ -149,6 +189,48 @@ def _safe_fail(pi, job, code, msg, retryable):
         pi.fail(job["id"], job["claim_token"], code, msg, retryable)
     except PiError as e:
         log.warning("job %s: fail not recorded (%s)", job["id"], e)
+
+
+SOFT_CAP = 8
+_STATE: dict = {}    # message key -> last text logged, so a steady condition is logged once, not every poll
+
+
+def log_change(key, level, msg):
+    if _STATE.get(key) != msg:
+        _STATE[key] = msg
+        log.log(level, msg)
+
+
+def log_clear(key):
+    _STATE.pop(key, None)
+
+
+SOFT_CAP_TEXT = "Brain kept failing on this item. Tap Retry later, or check Brain's Integrations page."
+_SOFT: dict = {}     # job id -> consecutive Brain 5xx / bad-reply count (this process only)
+
+
+def _job_suspect(jid, e) -> bool:
+    """Count Brain 5xx / 404 / 408 / 429 / bad_json against the job; auth, access and transport trouble is never its fault."""
+    if e.status >= 500 or e.status in (404, 408, 429) or e.code == "bad_json":
+        _SOFT[jid] = _SOFT.get(jid, 0) + 1
+        return _SOFT[jid] >= SOFT_CAP
+    _SOFT.pop(jid, None)
+    return False
+
+
+def _safe_requeue(pi, job, code, msg):
+    try:
+        pi.reconcile(job["id"], job["claim_token"], "requeue", error_code=code, error_msg=msg)
+    except PiError as e:
+        log.warning("job %s: requeue not recorded (%s); the lease will expire", job["id"], e)
+
+
+DELIVERY_TEXT = {
+    "name_conflict": "A different file with this name is already in Brain's inbox folder. VNode did not overwrite it.",
+    "write_failed": "VNode could not write to Brain's inbox folder. It will try again.",
+    "bad_payload": "This item is not valid UTF-8 text.",
+    "bad_job": "VNode could not understand this item.",
+}
 
 
 def process(cfg, pi, brain, ledger, job) -> bool:
@@ -190,11 +272,22 @@ def _process(cfg, pi, brain, ledger, job) -> bool:
     try:
         ref = deliver(cfg, brain, job, payload)
     except BrainError as e:
-        _safe_fail(pi, job, "brain_" + (e.code or "error"), "brain rejected the capture", e.retryable)
+        code = e.code if e.code == "access_blocked" else "brain_" + (e.code or "error")   # codes the phone app maps
+        if e.retryable and _job_suspect(jid, e):      # same job, 8 Brain 5xx / bad replies in a row: let it burn attempts
+            _SOFT.pop(jid, None)
+            _safe_fail(pi, job, code, SOFT_CAP_TEXT, True)
+            return True
+        if not e.retryable:
+            _SOFT.pop(jid, None)
+        if e.retryable:          # Brain, token, network or Access problem: not this job's fault, so no attempt is burned
+            _safe_requeue(pi, job, code, explain(e))
+            return True          # same job would be claimed again at once; stop and retry on the next poll
+        _safe_fail(pi, job, code, explain(e), False)
         return stops_pass(e)
     except Delivery as e:
-        _safe_fail(pi, job, e.code, e.code, e.retryable)
+        _safe_fail(pi, job, e.code, DELIVERY_TEXT.get(e.code, e.code), e.retryable)
         return False
+    _SOFT.pop(jid, None)
     try:
         ledger.delivered(jid, ref)
     except Exception:       # Brain/inbox already has it; complete anyway (text/url dedupe by key)
@@ -219,7 +312,7 @@ def reconcile_unknown(cfg, pi, ledger, live=True):
             if done and done["state"] == "delivered":
                 act(jid, ctok, "complete", result_ref=done["result_ref"])
                 continue
-            if job.get("kind") in ("md", "txt"):
+            if job.get("kind") in ("md", "txt") and cfg.inbox:
                 target = doc_target(cfg.inbox, job)
                 if os.path.isfile(target) and _sha_file(target) == job.get("payload_sha256"):
                     act(jid, ctok, "complete", result_ref=os.path.basename(target))
@@ -236,47 +329,79 @@ def reconcile_unknown(cfg, pi, ledger, live=True):
 
 
 def snapshot(brain, ledger, live=False) -> dict:
-    """Flat shape the Android screen reads. Brain down -> reachable false, counts null."""
+    """Flat shape the Android screen reads. Brain down -> reachable false, counts null.
+    A login redirect or 401/403 means Brain answered but refuses us: reachable true, auth_error true."""
     snap = {"reachable": True, "heartbeat": None, "pending": None, "processed_today": None, "needs_review": None,
             "failed": None, "last_note_id": ledger.last_delivered_ref(),
             "mode": "live" if live else "dry_run", "auth_error": False,
             "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-    carried = bool(getattr(brain, "auth_error", False))     # 401/403 seen since the last status call
+    carried = bool(getattr(brain, "auth_error", False))     # 401/403/redirect seen since the last status call
     try:
         st = brain.status()
         counts = st.get("counts") if isinstance(st.get("counts"), dict) else {}
         snap["heartbeat"] = st.get("heartbeat")
         for k in ("pending", "processed_today", "needs_review", "failed"):
             snap[k] = counts.get(k)
-    except BrainError:
-        snap["reachable"] = False
+    except BrainError as e:
+        snap["reachable"] = bool(getattr(brain, "auth_error", False)) and e.status != 0
     snap["auth_error"] = carried or bool(getattr(brain, "auth_error", False))
     return snap
 
 
-def run_once(cfg, pi, brain, ledger, live, sleep=time.sleep):
+def run_once(cfg, pi, brain, ledger, live, sleep=time.sleep) -> bool:
+    """One pass. Returns True when Brain (not the Pi) made it stop early, so the caller can slow its polling."""
     pi.heartbeat(socket.gethostname()[:30], VERSION, "live" if live else "dry_run")
     snap = snapshot(brain, ledger, live)
     pi.brain_status(snap)
     reconcile_unknown(cfg, pi, ledger, live)
-    if not snap["reachable"]:
-        return log.info("brain unreachable; not claiming this pass")
+    # /api/status can be blocked (Access) while /api/capture works, so only a dead transport stops claiming.
+    if getattr(brain, "transport_down", False):
+        log_change("brain", logging.INFO, "brain unreachable; not claiming until it answers")
+        return True
+    log_clear("brain")
     if not live:
         job = pi.claim("mac-dry-run")
         if job:
             log.warning("dry run: jobs are waiting and will not be delivered")
             log.info("dry-run: would deliver job %s kind=%s bytes=%s", job.get("id"), job.get("kind"), job.get("payload_bytes"))
             pi.reconcile(job["id"], job["claim_token"], "requeue")
-        return
-    for i in range(contracts.WORKER_MAX_PER_RUN):
-        job = pi.claim("mac-worker")
+        return False
+    stopped, captured = False, getattr(brain, "captured", 0)
+    for i in range(cfg.max_per_run):
+        job = pi.claim(cfg.name)
         if not job:
             break
         if i:
             sleep(contracts.WORKER_PACE_S)
         if process(cfg, pi, brain, ledger, job):
-            log.warning("stopping this pass (brain or pi unhealthy)")
+            log_change("stop", logging.WARNING, "stopping this pass (brain or pi unhealthy)")
+            stopped = True
             break
+    if not stopped:
+        log_clear("stop")
+    if getattr(brain, "captured", 0) > captured and (not snap["reachable"] or snap["auth_error"]):
+        # a capture just succeeded, so Brain is usable whatever /api/status said: fix what the phone sees
+        brain.auth_error = False
+        snap.update(reachable=True, auth_error=False)
+        pi.brain_status(snap)
+    return stopped
+
+
+def clock_ready(cfg) -> bool:
+    """TLS to Brain needs a real date; a Pi Zero has no RTC. Only enforced when WAIT_CLOCK_SYNC=1.
+    systemd-timesyncd's marker file, else timedatectl's answer (chrony / other NTP clients)."""
+    if not cfg.wait_clock or os.path.exists(CLOCK_SYNC_FILE):
+        return True
+    try:
+        r = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"], capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and r.stdout.strip() == "yes"
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def ledger_path():
+    state = os.environ.get("STATE_DIRECTORY")      # set by systemd (StateDirectory=); the Mac uses ~/.vhome-int
+    return os.path.join(state.split(":")[0], "delivered.db") if state else None
 
 
 def main(argv=None) -> int:
@@ -284,29 +409,46 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="deliver to Brain (default is dry run)")
     ap.add_argument("--once", action="store_true", help="one pass then exit")
     ap.add_argument("--env-file", default=None)
+    ap.add_argument("--from-env", action="store_true", help="read settings from the environment (systemd EnvironmentFile)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        cfg = load_config(a.env_file)
+        cfg = Config(dict(os.environ)) if a.from_env else load_config(a.env_file)
     except ConfigError as e:
         log.error("refusing to start: %s", e)
         return 78
-    pi = PiClient(cfg.host, cfg.port, cfg.node_id, cfg.pi_token)
-    brain = BrainClient(cfg.brain_url, cfg.brain_token)
-    ledger = Ledger()
-    log.info("worker %s started mode=%s", VERSION, "LIVE" if a.live else "dry-run")
+    pi, brain = cfg.pi_client(), cfg.brain_client()
+    ledger = Ledger(ledger_path())
+    log.info("worker %s started mode=%s via=%s", VERSION, "LIVE" if a.live else "dry-run", "unix socket" if cfg.socket else "tls")
+    slow = 0
     while True:
-        try:
-            run_once(cfg, pi, brain, ledger, a.live)
-        except PinMismatch:
-            log.error("pi certificate pin mismatch; nothing sent")
-        except PiError as e:
-            log.warning("pi: %s", e)
-        except Exception as e:      # never crash-loop
-            log.error("pass failed: %s", contracts.redact(type(e).__name__))
+        if not clock_ready(cfg):
+            log_change("clock", logging.INFO, "waiting for the clock to sync before talking to Brain")
+            try:
+                pi.heartbeat(socket.gethostname()[:30], VERSION, "live" if a.live else "dry_run")   # alive, just not delivering yet
+            except (PiError, PinMismatch):
+                pass
+            wait = CLOCK_CHECK_S
+        else:
+            if "clock" in _STATE:
+                log_clear("clock")
+                log.info("clock is synced")
+            try:
+                slow = slow + 1 if run_once(cfg, pi, brain, ledger, a.live) else 0
+                log_clear("pi")
+                log_clear("pass")
+            except PinMismatch:
+                log_change("pi", logging.ERROR, "pi certificate pin mismatch; nothing sent")
+            except PiError as e:
+                log_change("pi", logging.WARNING, "pi: %s" % e)
+            except Exception as e:      # never crash-loop
+                log_change("pass", logging.ERROR, "pass failed: %s" % contracts.redact(type(e).__name__))
+            # Brain trouble: poll less often (fewer SD writes), but always inside WORKER_STALE_S so the phone keeps
+            # seeing a live worker; run_once sends a heartbeat every cycle.
+            wait = min(cfg.poll_s * 2 ** min(slow, 4), BACKOFF_CAP_S)
         if a.once:
             return 0
-        time.sleep(contracts.WORKER_POLL_S)
+        time.sleep(wait)
 
 
 if __name__ == "__main__":

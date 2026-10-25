@@ -4,6 +4,9 @@
 # Commands: install | update | rollback | uninstall [--purge] | backup [OUT] | restore FILE | status | diag
 # Options:  --keep-wifi-powersave (leave Wi-Fi power save alone)   --no-leds (skip the LED service)
 #           --with-integrations (opt-in: also install vhome-integrations; a failure there never touches the TV release)
+#           --with-worker (opt-in, implies --with-integrations: delivery worker on the Pi, posts to Brain with the Mac off)
+#           --worker-env-file FILE (with --with-worker: BRAIN_URL, BRAIN_VNODE_TOKEN, optional BRAIN_ALLOW_HOST,
+#                                   CF_ACCESS_CLIENT_ID/SECRET, VNODE_WORKER_TOKEN; consumed and deleted on every exit path)
 set -euo pipefail
 
 BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,12 +26,19 @@ INT_GROUP=vhome-intsock
 INT_STATE=/var/lib/vhome-integrations
 INT_SOCKET=/run/vhome-integrations/int.sock
 INT_WRAPPER=/usr/local/bin/vnode-int
+DELIVER_UNIT=vhome-int-deliver
+DELIVER_USER=vhome-deliver
+DELIVER_DIR=/etc/vhome-int
+DELIVER_ENV=$DELIVER_DIR/deliver.env
+DELIVER_STATE=/var/lib/vhome-int-deliver
 
 KEEP_WIFI=0
 NO_LEDS=0
 PURGE=0
 WITH_INT=0
 INT_OK=0
+WITH_WORKER=0
+WORKER_ENV_SRC=""
 
 log() { printf '== %s\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
@@ -183,6 +193,7 @@ int_prepare() {
 install_int_files() {
   put "$BUNDLE/vnode/systemd/vhome-integrations.service" "$UNIT_DIR/$INT_UNIT.service" 0644
   put "$BUNDLE/vnode/bin/vnode-int" "$INT_WRAPPER" 0755
+  if [ "$WITH_WORKER" = 1 ]; then put "$BUNDLE/vnode/systemd/$DELIVER_UNIT.service" "$UNIT_DIR/$DELIVER_UNIT.service" 0644; fi
 }
 
 # start_integrations: after the TV is healthy. On failure: disable integrations, warn, leave the TV alone.
@@ -194,6 +205,10 @@ start_integrations() {
   for i in $(seq 1 90); do   # Pi Zero W: first start took ~23 s (python imports)
     if systemctl is-active --quiet "$INT_UNIT" && [ -S "$INT_SOCKET" ]; then
       echo "integrations up after ${i}s"
+      # the delivery worker runs from the same `current` release: move it onto the new one too (best effort)
+      if systemctl is-enabled --quiet "$DELIVER_UNIT" 2>/dev/null; then
+        systemctl restart "$DELIVER_UNIT" || warn "$DELIVER_UNIT did not restart: journalctl -u $DELIVER_UNIT"
+      fi
       return 0
     fi
     sleep 1
@@ -201,6 +216,145 @@ start_integrations() {
   journalctl -u "$INT_UNIT" -n 50 --no-pager || true
   systemctl disable --now "$INT_UNIT" >/dev/null 2>&1 || true
   warn "integrations failed to start and were disabled; the TV release is untouched. Retry: install --with-integrations"
+  return 1
+}
+
+# ---- delivery worker on the Pi (opt-in, only reached with --with-worker) ---------------------------
+
+# env_get FILE KEY: value of KEY=... (first match). Drops a trailing CR and ONE balanced pair of quotes, nothing else.
+env_get() {
+  local v
+  [ -f "$1" ] || return 0
+  v="$(sed -n "s/^$2=//p" "$1" | head -n 1 | tr -d '\r')"
+  case "$v" in
+    \"?*\") v="${v#\"}"; v="${v%\"}" ;;
+    \'?*\') v="${v#\'}"; v="${v%\'}" ;;
+  esac
+  printf '%s' "$v"
+}
+
+# env_value_ok VALUE: printable ASCII without spaces, quotes, backslash or backtick (safe in a systemd EnvironmentFile).
+env_value_ok() { local re='^[A-Za-z0-9._~:/?#@!$%&()*+,;=-]+$'; [[ "$1" =~ $re ]]; }
+
+# brain_url_ok URL: https only, plain host, optional port and path, no userinfo.
+brain_url_ok() { local re='^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[^[:space:]]*)?$'; [[ "$1" =~ $re ]]; }
+
+# parse_minted_token: stdin is `vnode-int worker-token create` output; prints only the token.
+parse_minted_token() { sed -n 's/^token (shown once, store it now): //p' | head -n 1; }
+
+# redact_output: stdin to stdout with anything after "store it now): " or "token" / "secret" labels blanked.
+redact_output() {
+  sed -E -e 's/(store it now\): ).*/\1<redacted>/' -e 's/([Tt]oken|[Ss]ecret|[Aa]uthorization)([^:=]*[:=] *).*/\1\2<redacted>/'
+}
+
+# mint_worker_token: prints the new token; on failure prints a redacted reason on stderr and returns 1.
+mint_worker_token() {
+  local out tok
+  out="$("$INT_WRAPPER" worker-token create 2>&1)" || { printf '%s\n' "$out" | redact_output >&2; return 1; }
+  tok="$(printf '%s\n' "$out" | parse_minted_token)"
+  [ -n "$tok" ] || { printf '%s\n' "$out" | redact_output >&2; return 1; }
+  printf '%s' "$tok"
+}
+
+# check_worker_token TOKEN: one read-only call on int.sock; 0 only if the service accepts the token. The token goes in the
+# environment of that one process, not in argv.
+check_worker_token() {
+  VH_TOK="$1" VH_SOCK="$INT_SOCKET" python3 -c '
+import http.client, os, socket, sys
+class C(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX); self.sock.settimeout(10); self.sock.connect(os.environ["VH_SOCK"])
+c = C("localhost")
+c.request("GET", "/v1/int/worker/unknown", headers={"Authorization": "Bearer " + os.environ["VH_TOK"]})
+sys.exit(0 if c.getresponse().status == 200 else 1)' 2>/dev/null
+}
+
+# write_deliver_env: build $DELIVER_ENV (0600 root:root; systemd reads it as root) from WORKER_ENV_SRC.
+# Tokens are never echoed. Without a source file an existing deliver.env is kept (a plain update needs no secrets).
+write_deliver_env() {
+  local url token wtoken host tmp cfid cfsec allow k v
+  if [ -z "$WORKER_ENV_SRC" ]; then
+    if [ -f "$DELIVER_ENV" ]; then echo "keeping existing $DELIVER_ENV"; return 0; fi
+    warn "no $DELIVER_ENV and no --worker-env-file: pass BRAIN_VNODE_TOKEN to deploy.sh --with-worker"
+    return 1
+  fi
+  [ -f "$WORKER_ENV_SRC" ] || { warn "worker env file $WORKER_ENV_SRC not found"; return 1; }
+  url="$(env_get "$WORKER_ENV_SRC" BRAIN_URL)"
+  token="$(env_get "$WORKER_ENV_SRC" BRAIN_VNODE_TOKEN)"
+  if [ -z "$url" ] || [ -z "$token" ]; then warn "worker env file needs BRAIN_URL and BRAIN_VNODE_TOKEN"; return 1; fi
+  brain_url_ok "$url" || { warn "BRAIN_URL must look like https://host[:port][/path] (no user:password@)"; return 1; }
+  allow="$(env_get "$WORKER_ENV_SRC" BRAIN_ALLOW_HOST)"
+  if [ -z "$allow" ]; then   # https://host[:port]/... -> host
+    host="${url#*://}"; host="${host%%/*}"; allow="${host%%:*}"
+  fi
+  cfid="$(env_get "$WORKER_ENV_SRC" CF_ACCESS_CLIENT_ID)"
+  cfsec="$(env_get "$WORKER_ENV_SRC" CF_ACCESS_CLIENT_SECRET)"
+  wtoken="$(env_get "$WORKER_ENV_SRC" VNODE_WORKER_TOKEN)"
+  for v in "$url" "$token" "$allow" "$cfid" "$cfsec" "$wtoken"; do
+    if [ -n "$v" ] && ! env_value_ok "$v"; then
+      warn "a worker setting has characters that are not allowed (spaces, quotes, backslash or control characters)"
+      return 1
+    fi
+  done
+  if [ -n "$wtoken" ]; then
+    check_worker_token "$wtoken" || { warn "the supplied VNODE_WORKER_TOKEN is not accepted by $INT_UNIT"; return 1; }
+  else
+    wtoken="$(env_get "$DELIVER_ENV" VNODE_WORKER_TOKEN)"   # re-run keeps the same worker token ...
+    if [ -n "$wtoken" ] && ! check_worker_token "$wtoken"; then wtoken=""; fi   # ... unless it was revoked meanwhile
+  fi
+  if [ -z "$wtoken" ]; then
+    k="$(mktemp)"
+    wtoken="$(mint_worker_token 2>"$k")" || wtoken=""
+    if [ -z "$wtoken" ]; then warn "could not mint a worker token: $(tr '\n' ' ' < "$k")"; rm -f "$k"; return 1; fi
+    rm -f "$k"
+  fi
+  tmp="$(umask 077; mktemp)"
+  {
+    printf 'BRAIN_URL=%s\nBRAIN_ALLOW_HOST=%s\nBRAIN_VNODE_TOKEN=%s\n' "$url" "$allow" "$token"
+    if [ -n "$cfid" ] && [ -n "$cfsec" ]; then printf 'CF_ACCESS_CLIENT_ID=%s\nCF_ACCESS_CLIENT_SECRET=%s\n' "$cfid" "$cfsec"; fi
+    printf 'VNODE_SOCKET=%s\nVNODE_WORKER_TOKEN=%s\n' "$INT_SOCKET" "$wtoken"
+    printf 'WORKER_NAME=pi-deliver\nWORKER_POLL_S=60\nWORKER_MAX_PER_RUN=5\nWAIT_CLOCK_SYNC=1\n'
+  } > "$tmp"
+  install -d -o root -g root -m 0700 "$DELIVER_DIR"
+  install -o root -g root -m 0600 "$tmp" "$DELIVER_ENV"
+  rm -f "$tmp" "$WORKER_ENV_SRC"
+  echo "wrote $DELIVER_ENV (0600 root:root)"
+}
+
+# ensure_deliver_user: own system user, group vhome-intsock only (enough to open int.sock, nothing else).
+ensure_deliver_user() {
+  getent group "$INT_GROUP" >/dev/null || return 1
+  if ! id "$DELIVER_USER" >/dev/null 2>&1; then
+    useradd --system --gid "$INT_GROUP" --home-dir "$DELIVER_STATE" --no-create-home --shell /usr/sbin/nologin "$DELIVER_USER" \
+      || return 1
+  fi
+}
+
+# setup_worker: after integrations are up. Never touches the TV or integrations; failure returns 1.
+setup_worker() {
+  log "Delivery worker"
+  local i since
+  ensure_deliver_user || { warn "could not create user $DELIVER_USER"; return 1; }
+  write_deliver_env || return 1
+  systemctl enable "$DELIVER_UNIT" >/dev/null 2>&1 || true
+  since="$(date '+%Y-%m-%d %H:%M:%S')"
+  systemctl restart "$DELIVER_UNIT" || true
+  for i in $(seq 1 45); do   # a bad config exits 78 within seconds; python imports take ~10-25 s on a Zero W
+    if ! systemctl is-active --quiet "$DELIVER_UNIT"; then
+      journalctl -u "$DELIVER_UNIT" -n 30 --no-pager || true
+      systemctl disable --now "$DELIVER_UNIT" >/dev/null 2>&1 || true
+      warn "delivery worker stopped right after start and was disabled. Fix the cause, then re-run with --with-worker"
+      return 1
+    fi
+    if journalctl -u "$DELIVER_UNIT" --since "$since" --no-pager 2>/dev/null | grep -q "started mode="; then
+      echo "delivery worker running after ${i}s"
+      return 0
+    fi
+    sleep 1
+  done
+  journalctl -u "$DELIVER_UNIT" -n 30 --no-pager || true
+  systemctl disable --now "$DELIVER_UNIT" >/dev/null 2>&1 || true
+  warn "delivery worker did not report 'started' within 45 s and was disabled"
   return 1
 }
 
@@ -214,10 +368,12 @@ int_failed_exit() {
 }
 
 uninstall_integrations() {
+  systemctl disable --now "$DELIVER_UNIT" 2>/dev/null || true
   systemctl disable --now "$INT_UNIT" 2>/dev/null || true
-  rm -f "$UNIT_DIR/$INT_UNIT.service" "$INT_WRAPPER"
+  rm -f "$UNIT_DIR/$DELIVER_UNIT.service" "$UNIT_DIR/$INT_UNIT.service" "$INT_WRAPPER"
   if [ "$PURGE" = 1 ]; then
-    rm -rf "${INT_STATE:?}"
+    rm -rf "${INT_STATE:?}" "${DELIVER_STATE:?}" "${DELIVER_DIR:?}"
+    if id "$DELIVER_USER" >/dev/null 2>&1; then userdel "$DELIVER_USER" || true; fi
     if id "$INT_USER" >/dev/null 2>&1; then userdel "$INT_USER" || true; fi
     if getent group "$INT_GROUP" >/dev/null; then groupdel "$INT_GROUP" || true; fi
   fi
@@ -421,7 +577,7 @@ cmd_install() {
     fi
     exit 1
   fi
-  local int_failed=0
+  local int_failed=0 worker_failed=0
   if [ "$WITH_INT" = 1 ] && [ "$INT_OK" = 1 ]; then
     start_integrations || int_failed=1
   elif [ "$WITH_INT" = 1 ]; then
@@ -429,8 +585,15 @@ cmd_install() {
   elif int_enabled; then
     start_integrations || int_failed=1   # plain update: integrations share `current`, so restart onto the new release
   fi
+  if [ "$WITH_WORKER" = 1 ] && [ "$WITH_INT" = 1 ] && [ "$int_failed" = 0 ]; then
+    setup_worker || worker_failed=1
+  fi
   echo "node id: $(node_id16)...  version: $(basename "$(readlink -f "$OPT/current")")"
   if [ "$int_failed" = 1 ]; then int_failed_exit; fi
+  if [ "$worker_failed" = 1 ]; then
+    echo "TV OK, integrations OK, delivery worker NOT running (see journalctl -u $DELIVER_UNIT)"
+    exit 3
+  fi
 }
 
 cmd_rollback() {
@@ -468,6 +631,7 @@ cmd_uninstall() {
     echo "kept $STATE (certificate, TV key, phone tokens) and user $SVC_USER; use --purge to remove them"
   fi
   if [ "$PURGE" != 1 ] && [ -d "$INT_STATE" ]; then echo "kept $INT_STATE and user $INT_USER (queued items); --purge removes them"; fi
+  if [ "$PURGE" != 1 ] && [ -f "$DELIVER_ENV" ]; then echo "kept $DELIVER_ENV (Brain token); --purge removes it"; fi
   echo "kept: apt packages, journald persistence is no longer configured (restart systemd-journald or reboot to apply)"
   echo "kept: Wi-Fi power save returns to the default on the next reconnect or reboot"
 }
@@ -573,14 +737,17 @@ cmd_diag() {
 # ---- main -----------------------------------------------------------------------------------
 
 usage() {
-  echo "usage: install-pi.sh install|update|rollback|uninstall [--purge]|backup [OUT]|restore FILE|status|diag [--keep-wifi-powersave] [--no-leds] [--with-integrations]"
+  echo "usage: install-pi.sh install|update|rollback|uninstall [--purge]|backup [OUT]|restore FILE|status|diag [--keep-wifi-powersave] [--no-leds] [--with-integrations] [--with-worker [--worker-env-file FILE]]"
 }
 
 main() {
   local cmd="" arg
   local -a pos=()
-  for arg in "$@"; do
+  while [ $# -gt 0 ]; do
+    arg="$1"; shift
     case "$arg" in
+      --with-worker) WITH_WORKER=1; WITH_INT=1 ;;
+      --worker-env-file) WORKER_ENV_SRC="${1:?--worker-env-file needs a path}"; shift ;;
       --keep-wifi-powersave) KEEP_WIFI=1 ;;
       --no-leds) NO_LEDS=1 ;;
       --with-integrations) WITH_INT=1 ;;
@@ -590,6 +757,8 @@ main() {
       *) if [ -z "$cmd" ]; then cmd="$arg"; else pos+=("$arg"); fi ;;
     esac
   done
+  # the secrets file is removed whatever happens (error, die, ctrl-C), not only when write_deliver_env gets to run
+  if [ -n "$WORKER_ENV_SRC" ]; then trap 'rm -f "$WORKER_ENV_SRC"' EXIT; fi
   case "$cmd" in
     install|update) cmd_install ;;
     rollback) cmd_rollback ;;

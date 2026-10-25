@@ -1,6 +1,6 @@
 # VNode integrations (opt-in)
 
-An optional second process, `vhome-integrations`, runs beside `vhome-vnode` on the Pi. Phones submit text, URLs or small documents to the node. The node keeps them in a small queue, and a Mac worker picks them up and hands them to Brain. The two services share nothing except a unix socket: no `Requires=`, `BindsTo=` or `PartOf=` either way, and `vhome-vnode.service` is not modified. If integrations fail or are disabled, the TV keeps working and the inbox routes answer 503.
+An optional second process, `vhome-integrations`, runs beside `vhome-vnode` on the Pi. Phones submit text, URLs or small documents to the node. The node keeps them in a small queue, and a delivery worker picks them up and hands them to Brain. The worker runs on the Mac, or on the Pi itself (next section) so delivery keeps working with the Mac off. The two services share nothing except a unix socket: no `Requires=`, `BindsTo=` or `PartOf=` either way, and `vhome-vnode.service` is not modified. If integrations fail or are disabled, the TV keeps working and the inbox routes answer 503.
 
 ## Install (opt-in)
 
@@ -15,6 +15,28 @@ If `vhome-integrations` is enabled, a plain `update` and `rollback` also restart
 
 `vhome-vnode` has to restart once after `vhome` joins the new group; the installer does this before its normal TV restart.
 
+## Pi delivers to Brain (Mac off)
+
+The delivery worker can run on the Pi as `vhome-int-deliver`. It talks to the node over its own unix socket (no TLS, no proxy) and to Brain over https at `https://cockpit.vineethnair.com`. Python stdlib only, about 15 MB of RAM; limits 48 MB, 40% CPU, Nice 15, Brain timeout 20 s, one poll every 60 s (backing off to at most 150 s while Brain is in trouble, so the phone never shows a live worker as not reporting), at most 5 jobs per poll, one connection per request. It waits for the clock to sync before the first call to Brain (a Pi Zero has no RTC and TLS needs a date): timesyncd's marker file, else `timedatectl` saying NTP is synchronized; checked every 30 s, with a heartbeat so the phone sees it alive, and logged once. It runs as its own user `vhome-deliver` (group `vhome-intsock` only, enough to open `int.sock`), so the process that talks to the internet and holds the Brain token cannot read the queue database or payloads. Extra hardening: PrivateDevices, ProtectProc=invisible, ProcSubset=pid, RestrictSUIDSGID, SystemCallFilter=@system-service (MemoryDenyWriteExecute is left out because it cannot be tested on the Pi). The TV controller is not touched and nothing orders this unit against it.
+
+Owner steps (once):
+
+1. On Brain, make sure the `vnode_token` exists. Add `/api/status` and `/api/failed` to the Cloudflare Access bypass beside `/api/capture`. Delivery works without that (only `/api/capture` is needed), but the phone then shows an Access warning until it is done. Alternative to the bypass: create a Cloudflare Access service token and pass it as `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET`.
+2. On the Mac, with the Pi reachable, run (replace the host, the secret stays in your shell, not in the command line):
+
+       read -rs BRAIN_VNODE_TOKEN && export BRAIN_VNODE_TOKEN
+       vnode/deploy.sh --host 192.168.29.9 update --with-worker
+
+   Optional variables: `BRAIN_URL` (default `https://cockpit.vineethnair.com`), `BRAIN_ALLOW_HOST` (default: the host of `BRAIN_URL`), `CF_ACCESS_CLIENT_ID` + `CF_ACCESS_CLIENT_SECRET`, `VNODE_WORKER_TOKEN` (default: a new worker token is minted on the Pi). `--with-worker` implies `--with-integrations`. The values travel in a private temp file, become `/etc/vhome-int/deliver.env` (0600 root:root; systemd reads it as root) and the temp file (a private `mktemp` file in the Pi user's home) is deleted on both machines on every exit path. The installer refuses spaces, quotes, backslashes and control characters in the values, requires `BRAIN_URL` to be `https://host[:port][/path]` without user:password, checks a supplied `VNODE_WORKER_TOKEN` against the service, and waits up to 45 s for the worker to log that it started. Later updates need no variables: without `BRAIN_VNODE_TOKEN` the existing `deliver.env` is kept and the worker restarts onto the new release.
+3. Check: `vnode/deploy.sh --host 192.168.29.9 int-status` shows the worker unit and the queue. The phone's Brain status should say "Reported by delivery worker" within a minute.
+4. Stop the Mac worker now (deploy.sh prints this step): `launchctl bootout gui/$UID/com.designinnsaeit.vhome-int-worker`. The two workers must not run together: their status lines overwrite each other and the Mac ledger knows nothing about what the Pi delivered (Brain still dedupes by key, but do not rely on it). To go back: stop the Pi unit, then `bash companion/install-worker.sh --load`.
+
+Differences from the Mac worker: documents (`.md`, `.txt`) are sent to Brain as capture text (the job key is the capture key; a label becomes a `# title` line only when the text has no heading) because Brain has no file route and there is no vault folder on the Pi. The Mac worker still writes files when `BRAIN_INBOX_PATH` is set. https is accepted only for exactly the host in `BRAIN_ALLOW_HOST`, with normal certificate checks; `http` stays loopback only.
+
+When Brain cannot be reached, refuses the token or sits behind the Access login, jobs go back to the queue untouched (no attempt is counted) with a plain reason on the job, and polling slows down (up to 10 minutes) until a capture succeeds. Only a 400, 413 or 422 from Brain fails a job. If the same job gets a Brain 5xx, 404, 408, 429 or an unreadable reply 8 passes in a row (counted in the worker's memory), it is failed as retryable with "Brain kept failing on this item. Tap Retry later, or check Brain's Integrations page.", so it burns an attempt and backs off instead of holding the queue. Auth, Access and network errors are never counted.
+
+Operate: `journalctl -u vhome-int-deliver -n 50`, `sudo systemctl stop vhome-int-deliver` (stop), `sudo systemctl disable --now vhome-int-deliver` (off). The delivery ledger is in `/var/lib/vhome-int-deliver`. `install-pi.sh uninstall` removes the unit; `--purge` also removes `deliver.env` and the ledger.
+
 ## Limits
 
 Unit: 64 MB RAM, 30% CPU, 32 tasks, Nice 10, low IO weight. Payload caps: text 8 KB, URL 2 KB, documents 256 KB, label 40 chars. Queue: 200 live jobs, 500 rows, 8 MB payload directory, 4 MB database, 30 submits per minute per phone. New jobs are refused when free disk is under 400 MB (health warning under 300 MB). Retries: 5 attempts, 30 s backoff doubling to 15 min.
@@ -25,7 +47,7 @@ Completed and cancelled rows are kept 7 days, failed rows 30 days. A completed p
 
 ## Encryption, honestly
 
-Traffic is TLS with the node certificate pinned (phone to node, Mac worker to node). Data at rest is NOT encrypted: the queue database and payload files are plaintext on the microSD card in `/var/lib/vhome-integrations`, mode 0700, owned by `vhome-int`. Anyone with the card or root on the Pi can read them. `vhome-int` is not in group `vhome` and cannot read `/var/lib/vhome-vnode` (0700).
+Traffic is TLS with the node certificate pinned (phone to node, Mac worker to node); the Pi worker uses the local unix socket, and reaches Brain over https with normal certificate checks. Data at rest is NOT encrypted: the queue database and payload files are plaintext on the microSD card in `/var/lib/vhome-integrations`, mode 0700, owned by `vhome-int`. Anyone with the card or root on the Pi can read them. `vhome-int` is not in group `vhome` and cannot read `/var/lib/vhome-vnode` (0700).
 
 Security note: the claim token is sent in the `X-Claim-Token` header. It replaced the query parameter, which leaked into logs and URLs.
 
