@@ -3,6 +3,7 @@
 #   sudo bash vnode/install-pi.sh <command> [options] [args]
 # Commands: install | update | rollback | uninstall [--purge] | backup [OUT] | restore FILE | status | diag
 # Options:  --keep-wifi-powersave (leave Wi-Fi power save alone)   --no-leds (skip the LED service)
+#           --with-integrations (opt-in: also install vhome-integrations; a failure there never touches the TV release)
 set -euo pipefail
 
 BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,10 +17,18 @@ AVAHI_FILE=/etc/avahi/services/vhome-vnode.service
 JOURNALD_FILE=/etc/systemd/journald.conf.d/50-vhome.conf
 NM_FILE=/etc/NetworkManager/conf.d/50-vhome-wifi-powersave.conf
 WRAPPER=/usr/local/bin/vnode
+INT_UNIT=vhome-integrations
+INT_USER=vhome-int
+INT_GROUP=vhome-intsock
+INT_STATE=/var/lib/vhome-integrations
+INT_SOCKET=/run/vhome-integrations/int.sock
+INT_WRAPPER=/usr/local/bin/vnode-int
 
 KEEP_WIFI=0
 NO_LEDS=0
 PURGE=0
+WITH_INT=0
+INT_OK=0
 
 log() { printf '== %s\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
@@ -135,6 +144,82 @@ ensure_user() {
     else
       warn "no gpio group; the LED service will not be able to open /dev/gpiochip0"
     fi
+  fi
+}
+
+# ---- integrations (opt-in, only reached with --with-integrations) -----------------------------
+
+# int_preflight: print python, aiohttp, sqlite3 versions; fail (return 1) when integrations cannot run here.
+int_preflight() {
+  log "Integrations preflight"
+  python3 -c "import sys, sqlite3, aiohttp; print('python', sys.version.split()[0], 'aiohttp', aiohttp.__version__, 'sqlite3', sqlite3.sqlite_version)" \
+    || return 1
+  python3 -c 'import sqlite3, sys; sys.exit(0 if sqlite3.sqlite_version_info >= (3, 24) else 1)' \
+    || { warn "sqlite3 >= 3.24 needed for integrations"; return 1; }
+}
+
+ensure_int_users() {
+  log "Integrations user"
+  # Runs inside an `if` condition (int_prepare), where set -e is off: every command needs its own || return 1.
+  getent group "$INT_GROUP" >/dev/null || groupadd --system "$INT_GROUP" || return 1
+  if ! id "$INT_USER" >/dev/null 2>&1; then
+    useradd --system --gid "$INT_GROUP" --home-dir "$INT_STATE" --no-create-home --shell /usr/sbin/nologin "$INT_USER" \
+      || return 1
+  fi
+  # vhome joins the socket group so the TV process can reach int.sock. vhome-int is NOT added to group vhome.
+  # Done before the TV restart in cmd_install: a process only sees new supplementary groups after it restarts.
+  usermod -aG "$INT_GROUP" "$SVC_USER" || return 1
+}
+
+# int_prepare: never fails; sets INT_OK=1 only when integrations may be installed. TV install proceeds either way.
+int_prepare() {
+  if int_preflight && ensure_int_users; then
+    INT_OK=1
+  else
+    warn "integrations skipped; the TV install continues without them"
+  fi
+}
+
+install_int_files() {
+  put "$BUNDLE/vnode/systemd/vhome-integrations.service" "$UNIT_DIR/$INT_UNIT.service" 0644
+  put "$BUNDLE/vnode/bin/vnode-int" "$INT_WRAPPER" 0755
+}
+
+# start_integrations: after the TV is healthy. On failure: disable integrations, warn, leave the TV alone.
+start_integrations() {
+  log "Integrations start"
+  local i
+  systemctl enable "$INT_UNIT" >/dev/null 2>&1 || true
+  systemctl restart "$INT_UNIT" || true
+  for i in $(seq 1 15); do
+    if systemctl is-active --quiet "$INT_UNIT" && [ -S "$INT_SOCKET" ]; then
+      echo "integrations up after ${i}s"
+      return 0
+    fi
+    sleep 1
+  done
+  journalctl -u "$INT_UNIT" -n 50 --no-pager || true
+  systemctl disable --now "$INT_UNIT" >/dev/null 2>&1 || true
+  warn "integrations failed to start and were disabled; the TV release is untouched. Retry: install --with-integrations"
+  return 1
+}
+
+# int_enabled: true when the integrations unit is enabled (it runs from the same current symlink as the TV).
+int_enabled() { systemctl is-enabled --quiet "$INT_UNIT" 2>/dev/null; }
+
+# int_failed_exit: TV is fine but integrations are not; distinct final line and exit code 3.
+int_failed_exit() {
+  echo "TV OK, integrations NOT running (see journalctl -u $INT_UNIT)"
+  exit 3
+}
+
+uninstall_integrations() {
+  systemctl disable --now "$INT_UNIT" 2>/dev/null || true
+  rm -f "$UNIT_DIR/$INT_UNIT.service" "$INT_WRAPPER"
+  if [ "$PURGE" = 1 ]; then
+    rm -rf "${INT_STATE:?}"
+    if id "$INT_USER" >/dev/null 2>&1; then userdel "$INT_USER" || true; fi
+    if getent group "$INT_GROUP" >/dev/null; then groupdel "$INT_GROUP" || true; fi
   fi
 }
 
@@ -266,6 +351,7 @@ install_files() {
   fi
 
   put "$v/bin/vnode" "$WRAPPER" 0755
+  if [ "$INT_OK" = 1 ]; then install_int_files; fi
   systemctl daemon-reload
   systemctl reload avahi-daemon 2>/dev/null || warn "avahi-daemon not reloaded (is it running?)"
 }
@@ -315,6 +401,7 @@ cmd_install() {
   preflight
   install_packages
   ensure_user
+  if [ "$WITH_INT" = 1 ]; then int_prepare; fi
   install_release
   ensure_state
   install_files
@@ -334,7 +421,16 @@ cmd_install() {
     fi
     exit 1
   fi
+  local int_failed=0
+  if [ "$WITH_INT" = 1 ] && [ "$INT_OK" = 1 ]; then
+    start_integrations || int_failed=1
+  elif [ "$WITH_INT" = 1 ]; then
+    int_failed=1   # asked for integrations, preflight/users refused them: TV is fine, say so loudly
+  elif int_enabled; then
+    start_integrations || int_failed=1   # plain update: integrations share `current`, so restart onto the new release
+  fi
   echo "node id: $(node_id16)...  version: $(basename "$(readlink -f "$OPT/current")")"
+  if [ "$int_failed" = 1 ]; then int_failed_exit; fi
 }
 
 cmd_rollback() {
@@ -348,6 +444,7 @@ cmd_rollback() {
   echo "current -> $prev (previous -> $cur)"
   restart_units
   health_check || die "rolled back, but the node is not healthy"
+  if int_enabled; then start_integrations || int_failed_exit; fi
 }
 
 cmd_uninstall() {
@@ -358,6 +455,7 @@ cmd_uninstall() {
     systemctl disable --now "$u" 2>/dev/null || true
     rm -f "$UNIT_DIR/$u.service"
   done
+  uninstall_integrations
   rm -f "$POLKIT_FILE" "$AVAHI_FILE" "$JOURNALD_FILE" "$NM_FILE" "$WRAPPER"
   rm -rf "${OPT:?}"
   systemctl daemon-reload
@@ -369,6 +467,7 @@ cmd_uninstall() {
   else
     echo "kept $STATE (certificate, TV key, phone tokens) and user $SVC_USER; use --purge to remove them"
   fi
+  if [ "$PURGE" != 1 ] && [ -d "$INT_STATE" ]; then echo "kept $INT_STATE and user $INT_USER (queued items); --purge removes them"; fi
   echo "kept: apt packages, journald persistence is no longer configured (restart systemd-journald or reboot to apply)"
   echo "kept: Wi-Fi power save returns to the default on the next reconnect or reboot"
 }
@@ -474,7 +573,7 @@ cmd_diag() {
 # ---- main -----------------------------------------------------------------------------------
 
 usage() {
-  echo "usage: install-pi.sh install|update|rollback|uninstall [--purge]|backup [OUT]|restore FILE|status|diag [--keep-wifi-powersave] [--no-leds]"
+  echo "usage: install-pi.sh install|update|rollback|uninstall [--purge]|backup [OUT]|restore FILE|status|diag [--keep-wifi-powersave] [--no-leds] [--with-integrations]"
 }
 
 main() {
@@ -484,6 +583,7 @@ main() {
     case "$arg" in
       --keep-wifi-powersave) KEEP_WIFI=1 ;;
       --no-leds) NO_LEDS=1 ;;
+      --with-integrations) WITH_INT=1 ;;
       --purge) PURGE=1 ;;
       -h|--help) usage; exit 0 ;;
       -*) usage >&2; die "unknown option $arg" ;;

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Run the integrations admin CLI as the service user (talks to /run/vhome-integrations/admin.sock, 0600 vhome-int).
+exec sudo -u vhome-int env PYTHONPATH=/opt/vhome-vnode/current /usr/bin/python3 -m vhome_companion.integrations cli "$@"

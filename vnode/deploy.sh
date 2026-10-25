@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Mac: build the bundle, copy it to the Pi and run install-pi.sh there. You type the sudo password in the ssh session.
-# usage: deploy.sh [--host vnode.local] [--user vnode] [--stop-mac-watcher] [install|update|rollback|status|diag|backup|restore FILE|uninstall] [extra args]
+# usage: deploy.sh [--host vnode.local] [--user vnode] [--stop-mac-watcher] [install|update|rollback|status|diag|backup|restore FILE|uninstall|int-status|int-inspect] [extra args]
+#   install|update accept --with-integrations (opt-in vhome-integrations; passed through to install-pi.sh).
+#   int-status / int-inspect only read from the Pi (no bundle is built or copied).
 #   backup copies the archive to ./vnode-backups/ on the Mac; restore FILE sends a Mac-side archive to the Pi.
 set -euo pipefail
 
@@ -21,9 +23,18 @@ done
 CMD="${1:-install}"
 if [ $# -gt 0 ]; then shift; fi
 case "$CMD" in
-  install|update|rollback|status|diag|backup|restore|uninstall) ;;
+  install|update|rollback|status|diag|backup|restore|uninstall|int-status|int-inspect) ;;
   *) echo "unknown command: $CMD" >&2; exit 2 ;;
 esac
+
+# Read-only integrations views; sudo is typed in the ssh session. vnode-int itself runs sudo -u vhome-int.
+if [ "$CMD" = int-status ]; then
+  ssh -t "$USER_@$HOST" "systemctl status vhome-integrations --no-pager; vnode-int stats"
+  exit 0
+elif [ "$CMD" = int-inspect ]; then
+  ssh -t "$USER_@$HOST" "sudo journalctl -u vhome-integrations -n 200 --no-pager; df -h / /var/lib/vhome-integrations; vnode-int stats"
+  exit 0
+fi
 
 if [ "$CMD" = install ] || [ "$CMD" = update ]; then
   if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then

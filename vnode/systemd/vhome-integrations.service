@@ -1,0 +1,57 @@
+[Unit]
+Description=V/HOME integrations (opt-in inbox queue behind the node, unix socket only)
+# Independent of vhome-vnode on purpose: no Requires=/BindsTo=/PartOf=/After= in either direction.
+# If this unit fails or is disabled, the TV controller keeps running; the proxy answers 503 and trips its breaker.
+# Start limits: systemd defaults are kept, same reasoning as vhome-vnode.service (slow endless retry, exit 78 = config error, never retried).
+
+[Service]
+Type=simple
+# Primary group vhome-intsock: the 0660 int.sock it creates is group vhome-intsock; user vhome is a supplementary member.
+# Deliberately NOT in group vhome, so it cannot read /var/lib/vhome-vnode (0700 vhome).
+User=vhome-int
+Group=vhome-intsock
+Environment=PYTHONPATH=/opt/vhome-vnode/current
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m vhome_companion.integrations serve
+# /var/lib/vhome-integrations (queue.db + payloads, plaintext on the SD card) and /run/vhome-integrations (int.sock 0660, admin.sock 0600).
+StateDirectory=vhome-integrations
+StateDirectoryMode=0700
+RuntimeDirectory=vhome-integrations
+RuntimeDirectoryMode=0750
+Restart=on-failure
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=120
+RestartPreventExitStatus=78
+TimeoutStopSec=10
+KillSignal=SIGTERM
+UMask=0077
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+
+# Resource limits: the Pi Zero W has one core and ~426 MB RAM; the TV controller always wins.
+MemoryMax=64M
+CPUQuota=30%
+TasksMax=32
+Nice=10
+IOWeight=10
+
+# Hardening: same block as vhome-vnode.service, minus what this service does not need
+# (no /dev/vchiq or video group; no network sockets: unix socket only, so AF_UNIX).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+DevicePolicy=closed
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
