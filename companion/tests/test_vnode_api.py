@@ -92,8 +92,13 @@ class Base(unittest.IsolatedAsyncioTestCase):
         async def run(argv):
             self.runs.append(argv)
             return 0, ""
+        self.probes = []
+
+        async def run_out(argv):
+            self.probes.append(argv)
+            return 1, ""
         self.device = Device(self.dir, run=run, clock=self.devclock, read=lambda p: (_ for _ in ()).throw(OSError()),
-                             restart_delay=0.05)
+                             restart_delay=0.05, run_out=run_out, glob=lambda pat: [])
         app = api.build_app(self.tv, self.phones, self.codes, self.nonces, self.device, INFO, admin=self.admin)
         self.client = TestClient(TestServer(app))
         await self.client.start_server()
@@ -302,8 +307,43 @@ class DiagnosticsTest(Base):
         self.assertEqual(d, {"tvs": [{"host": "192.168.1.20", "pinned": True}]})
 
 
+class HealthRouteTest(Base):
+    async def test_requires_token(self):
+        self.assertEqual((await self.client.get("/v1/health")).status, 401)
+
+    async def test_shape_and_unavailable_readings(self):
+        r = await self.client.get("/v1/health", headers=self.auth)
+        d = await r.json()
+        self.assertEqual(r.status, 200)
+        self.assertEqual(set(d), {"level", "problems", "age_s", "items"})
+        keys = [(i["group"], i["key"]) for i in d["items"]]
+        self.assertEqual(keys[:5], [("node", "service"), ("node", "restarts"), ("node", "clock"),
+                                    ("node", "leds_service"), ("node", "phones")])
+        by = {i["key"]: i for i in d["items"]}
+        self.assertEqual(by["temp"]["value"], "unavailable")  # the fake Pi has no files at all
+        self.assertEqual(by["temp"]["level"], "info")
+        self.assertEqual(by["phones"]["value"], "1 paired")
+        self.assertEqual(by["state"]["level"], "warn")  # fake watcher is user_paused
+        self.assertEqual(d["level"], "warn")
+        self.assertEqual(d["problems"], 1)
+
+    async def test_diagnostics_carries_health_items(self):
+        d = await (await self.client.get("/v1/diagnostics", headers=self.auth)).json()
+        self.assertEqual([i["key"] for i in d["health"]][:2], ["service", "restarts"])
+
+    async def test_probes_are_cached_between_requests(self):
+        await self.client.get("/v1/health", headers=self.auth)
+        n = len(self.probes)
+        await self.client.get("/v1/health", headers=self.auth)
+        self.assertEqual(len(self.probes), n)
+
+
 class AdminTest(Base):
     admin = True
+
+    async def test_health_without_token(self):
+        r = await self.client.get("/v1/health")
+        self.assertEqual((r.status, "items" in await r.json()), (200, True))
 
     async def test_no_token_and_pairing_code(self):
         r = await self.client.post("/admin/pairing-code")

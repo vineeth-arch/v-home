@@ -1,4 +1,5 @@
 import asyncio
+import fnmatch
 import json
 import os
 import sys
@@ -38,7 +39,7 @@ def make(files, **kw):
             return files[path]
         except KeyError:
             raise FileNotFoundError(path) from None
-    kw.setdefault("glob", lambda pat: [p for p in files if p.startswith("/sys/class/hwmon/") and p.endswith("/name")])
+    kw.setdefault("glob", lambda pat: sorted(p for p in files if fnmatch.fnmatch(p, pat)))
     return Device(Path(tempfile.mkdtemp()), read=read, **kw)
 
 
@@ -135,3 +136,123 @@ class PowerTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PI = {
+    **FILES,
+    "/proc/stat": "cpu  71044 8652 24055 1283681 5719 0 1334 0 0 0\ncpu0 1 1 1 1 1 0 0 0 0 0\n",
+    "/proc/loadavg": "0.04 0.08 0.08 1/111 6714\n",
+    "/proc/meminfo": "MemTotal:  436000 kB\nMemAvailable:  372000 kB\nSwapTotal: 102400 kB\nSwapFree: 102400 kB\n",
+    "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq": "1000000\n",
+    "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq": "1000000\n",
+    "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "ondemand\n",
+    "/sys/class/rfkill/rfkill0/type": "bluetooth\n", "/sys/class/rfkill/rfkill0/soft": "1\n",
+    "/sys/class/rfkill/rfkill0/hard": "0\n",
+    "/sys/class/rfkill/rfkill1/type": "wlan\n", "/sys/class/rfkill/rfkill1/soft": "0\n",
+    "/sys/class/bluetooth/hci0": "",
+    "/sys/class/net/wlan0/operstate": "up\n",
+    "/sys/class/net/wlan0/statistics/rx_errors": "1\n", "/sys/class/net/wlan0/statistics/tx_errors": "2\n",
+    "/sys/class/net/wlan0/statistics/rx_dropped": "3\n", "/sys/class/net/wlan0/statistics/tx_dropped": "4\n",
+}
+OUT = {
+    "get_throttled": "throttled=0x50005\n",
+    "measure_volts": "volt=1.3500V\n",
+    "addr": "3: wlan0    inet 192.168.1.50/24 brd 192.168.1.255 scope global dynamic wlan0\\       valid_lft 85000sec\n",
+    "NRestarts": "2\n",
+    "ActiveState": "active\n",
+}
+
+
+def make_out(files, outputs=None, **kw):
+    outputs, calls = dict(OUT if outputs is None else outputs), []
+
+    async def run_out(argv):
+        calls.append(list(argv))
+        for k, v in outputs.items():
+            if k in argv or k in " ".join(argv):
+                return 0, v
+        return 1, ""
+    return make(files, run_out=run_out, **kw), calls
+
+
+class HealthSnapshotTest(unittest.IsolatedAsyncioTestCase):
+    async def test_parses_everything(self):
+        dev, calls = make_out(PI)
+        s = await dev.health_snapshot()
+        self.assertEqual((s["throttled"], s["volts"], s["restarts"]), (0x50005, 1.35, 2))
+        self.assertEqual(s["wifi"], {"state": "up", "ip": "192.168.1.50", "dbm": -69, "bars": 2, "errors": 10})
+        self.assertEqual((s["load"], s["cpu_mhz"], s["cpu_max_mhz"], s["governor"]), ((0.04, 0.08, 0.08), 1000, 1000, "ondemand"))
+        self.assertEqual((s["mem_total_kb"], s["mem_avail_kb"], s["swap_total_kb"], s["swap_free_kb"]),
+                         (436000, 372000, 102400, 102400))
+        self.assertEqual(s["bluetooth"], {"present": True, "blocked": True})
+        self.assertEqual(s["cpu_use"], "measuring")
+        self.assertEqual(s["leds"], {"supported": False, "age_s": None, "unit": "active"})
+        self.assertGreater(s["disk_total_mb"], 0)
+        self.assertEqual(len(calls), 5)
+        self.assertTrue(all(isinstance(a, list) for a in calls))
+
+    async def test_cache_runs_each_probe_once_within_10s(self):
+        clock = Clock()
+        dev, calls = make_out(PI, clock=clock)
+        await dev.health_snapshot()
+        clock.t = 9.9
+        await dev.health_snapshot()
+        self.assertEqual(len(calls), 5)
+        clock.t = 10.0
+        s = await dev.health_snapshot()
+        self.assertEqual(len(calls), 10)
+        self.assertEqual(s["age_s"], 0.0)
+
+    async def test_failed_probe_is_cached_too(self):
+        clock = Clock()
+        dev, calls = make_out(PI, outputs={}, clock=clock)
+        s = await dev.health_snapshot()
+        await dev.health_snapshot()
+        self.assertEqual(len(calls), 5)
+        self.assertEqual((s["volts"], s["restarts"], s["wifi"]["ip"], s["leds"]["unit"]), (None, None, None, None))
+        self.assertEqual(s["throttled"], 0)  # falls back to the rpi_volt hwmon (alarm 0)
+
+    async def test_vcgencmd_missing_uses_hwmon_undervoltage(self):
+        dev, _ = make_out({**PI, "/sys/class/hwmon/hwmon2/in0_lcrit_alarm": "1\n"}, outputs={})
+        self.assertEqual((await dev.health_snapshot())["throttled"], 1)
+
+    async def test_runner_exception_is_unavailable(self):
+        async def boom(argv):
+            raise FileNotFoundError(argv[0])
+        s = await make(PI, run_out=boom).health_snapshot()
+        self.assertEqual((s["volts"], s["restarts"]), (None, None))
+
+    async def test_cpu_use_from_two_snapshots(self):
+        files = dict(PI)
+        dev, _ = make_out(files)
+        await dev.health_snapshot()
+        # +100 jiffies busy (user 60, system 40), +100 idle -> 50 %
+        files["/proc/stat"] = "cpu  71104 8652 24095 1283781 5719 0 1334 0 0 0\n"
+        self.assertEqual((await dev.health_snapshot())["cpu_use"], 50.0)
+        # no time passed -> not computable
+        self.assertIsNone((await dev.health_snapshot())["cpu_use"])
+
+    async def test_cpu_use_ignores_iowait_as_busy(self):
+        files = dict(PI)
+        dev, _ = make_out(files)
+        await dev.health_snapshot()
+        files["/proc/stat"] = "cpu  71044 8652 24055 1283681 5819 0 1334 0 0 0\n"  # only iowait grew
+        self.assertEqual((await dev.health_snapshot())["cpu_use"], 0.0)
+
+    async def test_bluetooth_states(self):
+        on = {**PI, "/sys/class/rfkill/rfkill0/soft": "0\n"}
+        self.assertEqual((await make_out(on)[0].health_snapshot())["bluetooth"], {"present": True, "blocked": False})
+        none = {k: v for k, v in PI.items() if "rfkill0" not in k and "bluetooth/" not in k}
+        self.assertEqual((await make_out(none)[0].health_snapshot())["bluetooth"], {"present": False, "blocked": None})
+
+    async def test_led_service_age(self):
+        files = {**PI, contracts.LED_STATE_FILE: "{}"}
+        s = await make_out(files, wall=lambda: 130.0, mtime=lambda p: 100.0)[0].health_snapshot()
+        self.assertEqual(s["leds"], {"supported": True, "age_s": 30.0, "unit": "active"})
+
+    async def test_missing_everything(self):
+        s = await make_out({}, outputs={}, disk=lambda p: (_ for _ in ()).throw(OSError()))[0].health_snapshot()
+        for k in ("temp_c", "throttled", "volts", "load", "cpu_use", "cpu_mhz", "mem_total_kb", "swap_total_kb",
+                  "disk_free_mb", "uptime_s", "restarts", "governor"):
+            self.assertIsNone(s[k], k)
+        self.assertEqual(s["wifi"], {"state": None, "ip": None, "dbm": None, "bars": None, "errors": None})

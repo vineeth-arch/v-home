@@ -18,6 +18,7 @@ from aiohttp import web
 from .. import __version__
 from . import contracts
 from .device import Device, RateLimited
+from .health import build_health
 from .phones import Nonces, PairingCodes, PhoneRegistry
 
 log = logging.getLogger("vhome.api")
@@ -246,9 +247,20 @@ class _Api:
     async def get_discover(self, request):
         return web.json_response({"tvs": await self.tv.discover_tvs()})
 
+    async def _health(self, diag=None):
+        diag = diag if diag is not None else self.tv.diagnostics()
+        snap = await self.device.health_snapshot()
+        node = {"version": self.info.get("version"), "uptime_s": int(time.monotonic() - self.started)}
+        ntp = (diag.get("checks") or {}).get("ntp_synced")
+        return build_health(snap, self.tv.status(), node, len(self.phones.list()), ntp, time.monotonic())
+
+    async def get_health(self, request):
+        return web.json_response(_scrub(await self._health()))
+
     async def get_diagnostics(self, request):
         diag = dict(self.tv.diagnostics())
         diag["system"] = self.device.status()
+        diag["health"] = (await self._health(diag))["items"]
         diag = _scrub(diag)
         log_lines = [l[:500] for l in diag.get("log", []) if isinstance(l, str)]
         diag["log"] = log_lines
@@ -359,6 +371,7 @@ def build_app(controller, phones, codes, nonces, device, info, *, admin=False):
         web.post("/v1/tv/launch", api.command(f(), api._launch)),
         web.post("/v1/tv/pair", api.command(f(host=_host, repin=(_bool,)), api._tv_pair)),
         web.get("/v1/tv/discover", api.get_discover),
+        web.get("/v1/health", api.get_health),
         web.get("/v1/diagnostics", api.get_diagnostics),
         web.get("/v1/phones", api.get_phones),
         web.delete("/v1/phones/{id}", api.delete_phone),

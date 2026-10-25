@@ -22,6 +22,15 @@ POWER_ACTIONS = {
 THERMAL = "/sys/class/thermal/thermal_zone0/temp"
 HWMON_NAMES = "/sys/class/hwmon/hwmon*/name"  # the rpi_volt one exposes under-voltage (no vcgencmd: /dev/vchiq is blocked)
 LED_STALE_S = 60.0
+PROBE_TIMEOUT_S = 3.0
+PROBE_CACHE_S = 10.0   # vcgencmd / systemctl / ip readings are reused for this long (monotonic)
+PROBES = {
+    "throttled": ["/usr/bin/vcgencmd", "get_throttled"],
+    "volts": ["/usr/bin/vcgencmd", "measure_volts", "core"],
+    "ip": ["ip", "-4", "-o", "addr", "show", "wlan0"],
+    "restarts": ["systemctl", "show", "vhome-vnode", "-p", "NRestarts", "--value"],
+    "leds_unit": ["systemctl", "show", "vhome-leds", "-p", "ActiveState", "--value"],
+}
 
 
 class RateLimited(Exception):
@@ -46,6 +55,26 @@ async def _run(argv):
     return proc.returncode, err.decode(errors="replace")
 
 
+async def _run_out(argv):
+    """-> (returncode, stdout text). No shell; 3 s limit; used only for read-only health probes."""
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), PROBE_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return -1, ""
+    return proc.returncode, out.decode(errors="replace")
+
+
+def _num(text, cast=int):
+    try:
+        return cast(str(text).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def _bars(dbm):
     if dbm is None:
         return None
@@ -57,9 +86,14 @@ def _bars(dbm):
 
 class Device:
     def __init__(self, state_dir, *, run=_run, clock=time.monotonic, read=_read_file, wall=time.time,
-                 mtime=os.path.getmtime, glob=glob.glob, restart_delay=1.0):
+                 mtime=os.path.getmtime, glob=glob.glob, restart_delay=1.0, run_out=_run_out,
+                 disk=shutil.disk_usage):
         self.state_dir = Path(state_dir)
         self._run, self._clock, self._read, self._wall, self._mtime = run, clock, read, wall, mtime
+        self._run_out, self._disk = run_out, disk
+        self._probe_cache = {}      # name -> (monotonic time, stdout text or None)
+        self._probe_lock = asyncio.Lock()
+        self._cpu_prev = None       # (busy, total) jiffies from the previous health call
         self._glob = glob
         self._delay = restart_delay
         self._last_power = None
@@ -105,6 +139,138 @@ class Device:
             pass
         out["wifi"] = self._wifi()
         return out
+
+    async def _probe(self, name):
+        now = self._clock()
+        hit = self._probe_cache.get(name)
+        if hit is None or now - hit[0] >= PROBE_CACHE_S:
+            try:
+                rc, out = await self._run_out(list(PROBES[name]))
+            except Exception:  # noqa: BLE001 - a missing binary is just "unavailable"
+                rc, out = -1, ""
+            hit = self._probe_cache[name] = (now, out if rc == 0 else None)
+        return hit
+
+    def _cpu_use(self):
+        """Busy % since the previous call. "measuring" on the first call, None when unreadable."""
+        parts = (self._try("/proc/stat") or "").split("\n", 1)[0].split()
+        try:
+            vals = [int(v) for v in parts[1:9]]
+        except ValueError:
+            return None
+        if parts[:1] != ["cpu"] or len(vals) < 4:
+            return None
+        total = sum(vals)
+        busy = total - vals[3] - vals[4] if len(vals) > 4 else total - vals[3]  # minus idle and iowait
+        prev, self._cpu_prev = self._cpu_prev, (busy, total)
+        if prev is None:
+            return "measuring"
+        if total <= prev[1]:
+            return None
+        return round(max(0.0, min(100.0, 100.0 * (busy - prev[0]) / (total - prev[1]))), 1)
+
+    def _meminfo_kb(self):
+        mem = {}
+        for line in (self._try("/proc/meminfo") or "").splitlines():
+            k, _, v = line.partition(":")
+            if v.split():
+                n = _num(v.split()[0])
+                if n is not None:
+                    mem[k] = n
+        return mem
+
+    def _net_errors(self):
+        total = 0
+        for name in ("rx_errors", "tx_errors", "rx_dropped", "tx_dropped"):
+            n = _num(self._try("/sys/class/net/wlan0/statistics/" + name))
+            if n is None:
+                return None
+            total += n
+        return total
+
+    def _bluetooth(self):
+        present = bool(self._glob("/sys/class/bluetooth/hci*"))
+        blocked = None
+        for tpath in sorted(self._glob("/sys/class/rfkill/rfkill*/type")):
+            if (self._try(tpath) or "").strip() == "bluetooth":
+                base = tpath[:-len("type")]
+                present = True
+                flags = [(self._try(base + k) or "").strip() for k in ("soft", "hard")]
+                blocked = "1" in flags
+                break
+        return {"present": present, "blocked": blocked}
+
+    def _led_service(self, unit_state):
+        raw = self._try(contracts.LED_STATE_FILE)
+        age = None
+        if raw is not None:
+            try:
+                age = round(max(self._wall() - self._mtime(contracts.LED_STATE_FILE), 0.0), 1)
+            except OSError:
+                pass
+        return {"supported": raw is not None, "age_s": age, "unit": unit_state}
+
+    async def health_snapshot(self):
+        """Raw readings for health.build_health. Never raises; an unreadable value is None."""
+        async with self._probe_lock:
+            names = list(PROBES)
+            got = dict(zip(names, await asyncio.gather(*(self._probe(n) for n in names))))
+            text = {n: got[n][1] for n in names}
+            now = self._clock()
+            age = round(max(now - got[n][0] for n in names), 1)
+            throttled = None
+            if text["throttled"] is not None:
+                throttled = _num(text["throttled"].strip().partition("=")[2], lambda v: int(v, 16))
+            if throttled is None:  # vcgencmd unavailable: the rpi_volt hwmon only knows under-voltage now
+                hw = self._throttled()
+                throttled = int(hw, 16) if hw else None
+            volts = None
+            if text["volts"] is not None:
+                volts = _num(text["volts"].strip().partition("=")[2].rstrip("V"), float)
+            ip = None
+            for tok in (text["ip"] or "").split():
+                if "/" in tok and tok[0].isdigit():
+                    ip = tok.split("/")[0]
+                    break
+            load = None
+            try:
+                load = tuple(float(v) for v in (self._try("/proc/loadavg") or "").split()[:3])
+                if len(load) != 3:
+                    load = None
+            except ValueError:
+                pass
+            cur = _num(self._try("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"))
+            top = _num(self._try("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"))
+            mem = self._meminfo_kb()
+            try:
+                du = self._disk("/")
+                disk = (du.free // (1024 * 1024), du.total // (1024 * 1024))
+            except OSError:
+                disk = (None, None)
+            try:
+                uptime = int(float((self._try("/proc/uptime") or "").split()[0]))
+            except (IndexError, ValueError):
+                uptime = None
+            temp = _num(self._try(THERMAL))
+            wifi = self._wifi()
+            state = (self._try("/sys/class/net/wlan0/operstate") or "").strip() or None
+            return {
+                "age_s": age,
+                "temp_c": None if temp is None else round(temp / 1000, 1),
+                "throttled": throttled, "volts": volts, "load": load,
+                "cpu_use": self._cpu_use(),
+                "cpu_mhz": None if cur is None else cur // 1000,
+                "cpu_max_mhz": None if top is None else top // 1000,
+                "governor": (self._try("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor") or "").strip() or None,
+                "mem_total_kb": mem.get("MemTotal"), "mem_avail_kb": mem.get("MemAvailable"),
+                "swap_total_kb": mem.get("SwapTotal"), "swap_free_kb": mem.get("SwapFree"),
+                "disk_free_mb": disk[0], "disk_total_mb": disk[1], "uptime_s": uptime,
+                "wifi": {"state": state, "ip": ip, "dbm": wifi["dbm"], "bars": wifi["bars"],
+                         "errors": self._net_errors()},
+                "bluetooth": self._bluetooth(),
+                "restarts": _num(text["restarts"]),
+                "leds": self._led_service((text["leds_unit"] or "").strip() or None),
+            }
 
     def _throttled(self):
         for name_path in sorted(self._glob(HWMON_NAMES)):

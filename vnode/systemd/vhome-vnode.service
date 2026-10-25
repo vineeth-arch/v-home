@@ -37,12 +37,17 @@ LogRateLimitBurst=200
 # (ProtectSystem=strict only makes the tree read-only; /proc and /sys stay readable), and talking to the
 # system D-Bus (AF_UNIX) for "systemctl reboot|poweroff|restart" under the polkit rule. NoNewPrivileges
 # does not block that: polkit authorises by user, no setuid helper is involved.
-# PrivateDevices hides /dev/gpiochip0, which this service does not need (vhome-leds does).
+# No PrivateDevices: /usr/bin/vcgencmd (throttling and voltage in GET /v1/health) needs /dev/vchiq. Instead
+# DevicePolicy=closed denies every device except the allow-list (plus the always-allowed null, zero, full,
+# random, urandom, tty), and SupplementaryGroups=video gives access to /dev/vchiq (root:video, 0660).
+# /dev/gpiochip0 stays denied: this service does not need it (vhome-leds does).
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-PrivateDevices=yes
+DevicePolicy=closed
+DeviceAllow=/dev/vchiq rw
+SupplementaryGroups=video
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
