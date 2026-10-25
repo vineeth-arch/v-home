@@ -28,11 +28,12 @@ class NodeClient(
     private val host: String, pin: String?, trustNew: Boolean, socketFactory: SocketFactory,
     private val token: String?, onCert: (String) -> Unit = {}, private val port: Int = NODE_PORT,
     dns: Dns = Dns.SYSTEM, // the phone passes the Wi-Fi network's resolver so vnode.local works with a VPN up
+    callTimeoutS: Long = 20,
 ) {
     private val http: OkHttpClient = PinTrust.client(pin, trustNew, socketFactory, onCert).newBuilder()
         .dns(dns)
         .readTimeout(15, TimeUnit.SECONDS)
-        .callTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(callTimeoutS, TimeUnit.SECONDS)
         .build()
 
     // A command may already have reached the node when the connection drops, so the transport must not replay it.
@@ -55,6 +56,7 @@ class NodeClient(
     }
 
     suspend fun status(): NodeStatus = NodeStatus.parse(get("/v1/status"))
+    suspend fun health(): NodeHealth = NodeHealth.parse(get("/v1/health"))
     suspend fun device(): DeviceStatus = DeviceStatus.parse(get("/v1/device"))
     suspend fun diagnostics(): String = get("/v1/diagnostics").toString(2)
 

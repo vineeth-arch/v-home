@@ -8,6 +8,8 @@
     <color name="text_dim">#5E5E5E</color>
     <color name="red">#D62828</color>
     <color name="red_pressed">#C52525</color>
+    <!-- amber text: 5.7:1 on paper (yellow is a fill only); red text uses red (4.8:1 on paper) -->
+    <color name="warn_text">#8A5A00</color>
     <color name="blue">#1D3FBF</color>
     <color name="yellow">#EBC21F</color>
     <color name="on_colour">#151515</color>

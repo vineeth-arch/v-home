@@ -58,6 +58,23 @@ class NodeClientTest {
         assertEquals("Bearer tok", req.getHeader("Authorization"))
     }
 
+    @Test fun healthParsesTheContractSampleAndUnknownLevelIsInfo() {
+        server.enqueue(json("""{"level":"warn","problems":1,"age_s":0.4,"items":[
+            {"group":"pi","key":"temp","label":"Temperature","value":"45.1 °C","level":"ok","detail":""},
+            {"group":"network","key":"wifi_signal","label":"Wi-Fi signal","value":"-78 dBm","level":"warn","detail":"Weak signal."},
+            {"group":"node","key":"phones","label":"Phones","value":"2","level":"surprise","detail":""}]}"""))
+        val h = runBlocking { client(pin).health() }
+        val req = server.takeRequest(1, TimeUnit.SECONDS)!!
+        assertEquals("/v1/health", req.path)
+        assertEquals("Bearer tok", req.getHeader("Authorization"))
+        assertEquals(HealthLevel.WARN, h.level)
+        assertEquals(1, h.problems)
+        assertEquals(0.4, h.ageS!!, 0.001)
+        assertEquals(listOf(HealthLevel.OK, HealthLevel.WARN, HealthLevel.INFO), h.items.map { it.level })
+        assertEquals("Weak signal.", h.items[1].detail)
+        assertEquals("45.1 °C", h.items[0].value)
+    }
+
     @Test fun everyRequestCarriesTheApiHeader() {
         server.enqueue(json("""{"api":1,"node_id":"$pin","name":"vnode","version":"x","capabilities":{}}"""))
         runBlocking { client(pin, token = null).info() }

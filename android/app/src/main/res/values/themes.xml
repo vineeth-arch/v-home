@@ -38,6 +38,9 @@
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textColor">@color/ink</item>
     </style>
+    <style name="T_Small_Header" parent="T.Small">
+        <item name="android:textColor">@color/text_dim</item>
+    </style>
     <style name="T.Label">
         <item name="android:textSize">14sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>

@@ -9,6 +9,7 @@ class BootReceiver : BroadcastReceiver() {
         if (Prefs.mode(context) == ControllerMode.STANDALONE && Prefs.load(context).pin != null) startWatcher(context, "boot/update")
         HomeNetwork.register(context)
         WatchdogJob.arm(context)
+        if (Prefs.mode(context) == ControllerMode.VNODE && NodeStore(context).isPaired()) NodeHealthJob.schedule(context)
     }
 }
 

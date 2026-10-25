@@ -145,6 +145,11 @@
     <string name="node_resume">Resume</string>
     <string name="node_turn_on">Let the node watch</string>
     <string name="node_pause">Pause 1 hour</string>
+    <string name="node_section_health">Health</string>
+    <string name="node_health_unavailable">This node doesn\'t report health yet. Update the node.</string>
+    <string name="node_health_checking">Checking the node…</string>
+    <string name="channel_node_problems">Node problems</string>
+    <string name="node_alert_title">V/HOME node needs a look</string>
     <string name="node_section_tv">TV</string>
     <string name="node_section_watcher">Watcher</string>
     <string name="node_section_pi">Raspberry Pi</string>
