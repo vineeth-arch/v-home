@@ -199,7 +199,10 @@ def _pi(it, s):
             it.add(g, "throttle_boot", "Throttling since boot", ", ".join(since).capitalize(), WARN,
                    "The Pi was throttled earlier since boot; check the power supply and cooling.")
         else:
-            it.add(g, "throttle_boot", "Throttling since boot", "None", OK)
+            if s.get("throttled_source") == "hwmon":   # the fallback sensor can't see the past
+                it.unavailable(g, "throttle_boot", "Throttling since boot")
+            else:
+                it.add(g, "throttle_boot", "Throttling since boot", "None", OK)
 
     v = s.get("volts")
     if v is None:

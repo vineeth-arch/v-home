@@ -208,5 +208,13 @@ class RollupTest(unittest.TestCase):
         self.assertEqual((by["power"]["value"], by["foreground"]["value"]), ("not reported by this TV", "unavailable"))
 
 
+
+class HwmonFallbackTest(unittest.TestCase):
+    def test_since_boot_is_unavailable_when_only_hwmon_answered(self):
+        h = health(throttled=0, throttled_source="hwmon")
+        item = next(i for i in h["items"] if i["key"] == "throttle_boot")
+        self.assertEqual((item["value"], item["level"]), ("unavailable", "info"))
+
+
 if __name__ == "__main__":
     unittest.main()

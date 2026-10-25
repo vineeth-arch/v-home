@@ -178,8 +178,10 @@ def make_out(files, outputs=None, **kw):
 class HealthSnapshotTest(unittest.IsolatedAsyncioTestCase):
     async def test_parses_everything(self):
         dev, calls = make_out(PI)
+        dev._ipv4 = lambda name: "192.168.1.50"   # real ioctl needs a real wlan0
         s = await dev.health_snapshot()
         self.assertEqual((s["throttled"], s["volts"], s["restarts"]), (0x50005, 1.35, 2))
+        self.assertEqual(s["throttled_source"], "vcgencmd")
         self.assertEqual(s["wifi"], {"state": "up", "ip": "192.168.1.50", "dbm": -69, "bars": 2, "errors": 10})
         self.assertEqual((s["load"], s["cpu_mhz"], s["cpu_max_mhz"], s["governor"]), ((0.04, 0.08, 0.08), 1000, 1000, "ondemand"))
         self.assertEqual((s["mem_total_kb"], s["mem_avail_kb"], s["swap_total_kb"], s["swap_free_kb"]),
@@ -188,7 +190,7 @@ class HealthSnapshotTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s["cpu_use"], "measuring")
         self.assertEqual(s["leds"], {"supported": False, "age_s": None, "unit": "active"})
         self.assertGreater(s["disk_total_mb"], 0)
-        self.assertEqual(len(calls), 5)
+        self.assertEqual(len(calls), 4)
         self.assertTrue(all(isinstance(a, list) for a in calls))
 
     async def test_cache_runs_each_probe_once_within_10s(self):
@@ -197,20 +199,22 @@ class HealthSnapshotTest(unittest.IsolatedAsyncioTestCase):
         await dev.health_snapshot()
         clock.t = 9.9
         await dev.health_snapshot()
-        self.assertEqual(len(calls), 5)
+        self.assertEqual(len(calls), 4)
         clock.t = 10.0
         s = await dev.health_snapshot()
-        self.assertEqual(len(calls), 10)
+        self.assertEqual(len(calls), 8)
         self.assertEqual(s["age_s"], 0.0)
 
     async def test_failed_probe_is_cached_too(self):
         clock = Clock()
         dev, calls = make_out(PI, outputs={}, clock=clock)
+        dev._ipv4 = lambda name: None
         s = await dev.health_snapshot()
         await dev.health_snapshot()
-        self.assertEqual(len(calls), 5)
+        self.assertEqual(len(calls), 4)
         self.assertEqual((s["volts"], s["restarts"], s["wifi"]["ip"], s["leds"]["unit"]), (None, None, None, None))
         self.assertEqual(s["throttled"], 0)  # falls back to the rpi_volt hwmon (alarm 0)
+        self.assertEqual(s["throttled_source"], "hwmon")
 
     async def test_vcgencmd_missing_uses_hwmon_undervoltage(self):
         dev, _ = make_out({**PI, "/sys/class/hwmon/hwmon2/in0_lcrit_alarm": "1\n"}, outputs={})

@@ -27,7 +27,6 @@ PROBE_CACHE_S = 10.0   # vcgencmd / systemctl / ip readings are reused for this 
 PROBES = {
     "throttled": ["/usr/bin/vcgencmd", "get_throttled"],
     "volts": ["/usr/bin/vcgencmd", "measure_volts", "core"],
-    "ip": ["ip", "-4", "-o", "addr", "show", "wlan0"],
     "restarts": ["systemctl", "show", "vhome-vnode", "-p", "NRestarts", "--value"],
     "leds_unit": ["systemctl", "show", "vhome-leds", "-p", "ActiveState", "--value"],
 }
@@ -58,13 +57,13 @@ async def _run(argv):
 async def _run_out(argv):
     """-> (returncode, stdout text). No shell; 3 s limit; used only for read-only health probes."""
     proc = await asyncio.create_subprocess_exec(
-        *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), PROBE_TIMEOUT_S)
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        return -1, ""
+        return -1, "timed out"
     return proc.returncode, out.decode(errors="replace")
 
 
@@ -91,6 +90,7 @@ class Device:
         self.state_dir = Path(state_dir)
         self._run, self._clock, self._read, self._wall, self._mtime = run, clock, read, wall, mtime
         self._run_out, self._disk = run_out, disk
+        self._probe_warned = set()
         self._probe_cache = {}      # name -> (monotonic time, stdout text or None)
         self._probe_lock = asyncio.Lock()
         self._cpu_prev = None       # (busy, total) jiffies from the previous health call
@@ -146,8 +146,11 @@ class Device:
         if hit is None or now - hit[0] >= PROBE_CACHE_S:
             try:
                 rc, out = await self._run_out(list(PROBES[name]))
-            except Exception:  # noqa: BLE001 - a missing binary is just "unavailable"
-                rc, out = -1, ""
+            except Exception as e:  # noqa: BLE001 - a missing binary is just "unavailable"
+                rc, out = -1, f"{type(e).__name__}: {e}"
+            if rc != 0 and name not in self._probe_warned:   # once per probe, so the reason is visible
+                self._probe_warned.add(name)
+                log.warning("health probe %s failed (rc %s): %s", name, rc, contracts.redact(out.strip())[:200])
             hit = self._probe_cache[name] = (now, out if rc == 0 else None)
         return hit
 
@@ -221,17 +224,15 @@ class Device:
             throttled = None
             if text["throttled"] is not None:
                 throttled = _num(text["throttled"].strip().partition("=")[2], lambda v: int(v, 16))
+            throttled_source = "vcgencmd" if throttled is not None else None
             if throttled is None:  # vcgencmd unavailable: the rpi_volt hwmon only knows under-voltage now
                 hw = self._throttled()
                 throttled = int(hw, 16) if hw else None
+                throttled_source = "hwmon" if hw else None
             volts = None
             if text["volts"] is not None:
                 volts = _num(text["volts"].strip().partition("=")[2].rstrip("V"), float)
-            ip = None
-            for tok in (text["ip"] or "").split():
-                if "/" in tok and tok[0].isdigit():
-                    ip = tok.split("/")[0]
-                    break
+            ip = self._ipv4("wlan0")
             load = None
             try:
                 load = tuple(float(v) for v in (self._try("/proc/loadavg") or "").split()[:3])
@@ -257,7 +258,7 @@ class Device:
             return {
                 "age_s": age,
                 "temp_c": None if temp is None else round(temp / 1000, 1),
-                "throttled": throttled, "volts": volts, "load": load,
+                "throttled": throttled, "throttled_source": throttled_source, "volts": volts, "load": load,
                 "cpu_use": self._cpu_use(),
                 "cpu_mhz": None if cur is None else cur // 1000,
                 "cpu_max_mhz": None if top is None else top // 1000,
@@ -271,6 +272,16 @@ class Device:
                 "restarts": _num(text["restarts"]),
                 "leds": self._led_service((text["leds_unit"] or "").strip() or None),
             }
+
+    def _ipv4(self, ifname):
+        """IPv4 of an interface via SIOCGIFADDR; None when it has none or the call fails."""
+        import fcntl, socket, struct
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+                raw = fcntl.ioctl(sk.fileno(), 0x8915, struct.pack("256s", ifname.encode()[:15]))
+            return socket.inet_ntoa(raw[20:24])
+        except OSError:
+            return None
 
     def _throttled(self):
         for name_path in sorted(self._glob(HWMON_NAMES)):
