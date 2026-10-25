@@ -188,6 +188,20 @@ def _safe_fail(pi, job, code, msg, retryable):
         log.warning("job %s: fail not recorded (%s)", job["id"], e)
 
 
+SOFT_CAP = 8
+SOFT_CAP_TEXT = "Brain kept failing on this item. Tap Retry later, or check Brain's Integrations page."
+_SOFT: dict = {}     # job id -> consecutive Brain 5xx / bad-reply count (this process only)
+
+
+def _job_suspect(jid, e) -> bool:
+    """Count Brain 5xx / bad_json against the job; auth, access and transport trouble is never the job's fault."""
+    if e.status >= 500 or e.code == "bad_json":
+        _SOFT[jid] = _SOFT.get(jid, 0) + 1
+        return _SOFT[jid] >= SOFT_CAP
+    _SOFT.pop(jid, None)
+    return False
+
+
 def _safe_requeue(pi, job, code, msg):
     try:
         pi.reconcile(job["id"], job["claim_token"], "requeue", error_code=code, error_msg=msg)
@@ -243,6 +257,12 @@ def _process(cfg, pi, brain, ledger, job) -> bool:
         ref = deliver(cfg, brain, job, payload)
     except BrainError as e:
         code = e.code if e.code == "access_blocked" else "brain_" + (e.code or "error")   # codes the phone app maps
+        if e.retryable and _job_suspect(jid, e):      # same job, 8 Brain 5xx / bad replies in a row: let it burn attempts
+            _SOFT.pop(jid, None)
+            _safe_fail(pi, job, code, SOFT_CAP_TEXT, True)
+            return True
+        if not e.retryable:
+            _SOFT.pop(jid, None)
         if e.retryable:          # Brain, token, network or Access problem: not this job's fault, so no attempt is burned
             _safe_requeue(pi, job, code, explain(e))
             return True          # same job would be claimed again at once; stop and retry on the next poll
@@ -251,6 +271,7 @@ def _process(cfg, pi, brain, ledger, job) -> bool:
     except Delivery as e:
         _safe_fail(pi, job, e.code, DELIVERY_TEXT.get(e.code, e.code), e.retryable)
         return False
+    _SOFT.pop(jid, None)
     try:
         ledger.delivered(jid, ref)
     except Exception:       # Brain/inbox already has it; complete anyway (text/url dedupe by key)

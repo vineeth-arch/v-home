@@ -757,6 +757,40 @@ class TestRequeueNotFail(Base):
         self.assertNotEqual(f["error_msg"], "name_conflict")
         self.assertIn("could not write", W.DELIVERY_TEXT["write_failed"])
 
+    def test_same_job_failing_8_times_with_5xx_is_failed_retryable_others_uncapped(self):
+        W._SOFT.clear()
+        self.brain_state["capture_code"] = 500
+        job, p = mkjob()
+        other, op = mkjob()
+        cfg, pi, brain = self.parts()
+        for n in range(7):
+            self.pi_state["queue"].append(job)
+            self.pi_state["payloads"][job["id"]] = p
+            W.run_once(cfg, pi, brain, self.ledger, True, sleep=lambda s: None)
+        self.assertEqual(self.pi_posts("fail"), [])                  # 7 requeues, still nothing burned
+        self.pi_state["queue"].append(job)
+        W.run_once(cfg, pi, brain, self.ledger, True, sleep=lambda s: None)
+        f = self.pi_posts("fail")
+        self.assertEqual(len(f), 1)
+        self.assertTrue(f[0][3]["retryable"])
+        self.assertEqual(f[0][3]["error_msg"], "Brain kept failing on this item. Tap Retry later, or check Brain's Integrations page.")
+        self.assertEqual(f[0][3]["error_code"], "brain_http_500")
+        # counter was reset; a different failure kind in between also resets it
+        self.assertNotIn(job["id"], W._SOFT)
+
+    def test_auth_access_and_transport_errors_never_count(self):
+        W._SOFT.clear()
+        job, p = mkjob()
+        cfg, pi, brain = self.parts()
+        for code in (401, 403, 503):
+            self.brain_state["capture_code"] = code
+            for _ in range(10 if code != 503 else 3):
+                self.pi_state["queue"].append(job)
+                self.pi_state["payloads"][job["id"]] = p
+                W.run_once(cfg, pi, brain, self.ledger, True, sleep=lambda s: None)
+        self.assertEqual(self.pi_posts("fail"), [])
+        self.assertEqual(W._SOFT.get(job["id"]), 3)                  # only the 503s counted, 401/403 reset the run
+
     def test_requeue_backs_polling_off(self):
         self.brain_state["capture_code"] = 503
         self.queue(mkjob())
