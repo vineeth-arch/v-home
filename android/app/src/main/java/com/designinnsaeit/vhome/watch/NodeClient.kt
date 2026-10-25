@@ -39,6 +39,11 @@ class NodeClient(
     // A command may already have reached the node when the connection drops, so the transport must not replay it.
     private val once: OkHttpClient = http.newBuilder().retryOnConnectionFailure(false).build()
 
+    // Accessors for InboxClient: same pinned client, same token, nothing duplicated.
+    internal val httpClient: OkHttpClient get() = http
+    internal val commandClient: OkHttpClient get() = once
+    internal fun authedRequest(path: String): Request.Builder = request(path)
+
     suspend fun info(): NodeInfo {
         val info = NodeInfo.parse(get("/v1/info"))
         if (info.api != NODE_API) throw NodeException(NodeProblem.PROTOCOL_MISMATCH, "node speaks API ${info.api}")

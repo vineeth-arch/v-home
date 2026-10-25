@@ -32,6 +32,18 @@
             android:name=".NodeActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".InboxActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:label="Send to VNode">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".WatcherService"
             android:exported="false"

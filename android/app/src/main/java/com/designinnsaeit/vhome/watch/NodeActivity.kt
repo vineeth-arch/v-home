@@ -82,6 +82,7 @@ class NodeActivity : Activity() {
     private val found = linkedMapOf<String, NodeCandidate>()
     private val brightnessButtons = mutableListOf<Button>()
     private lateinit var commandButtons: List<View>
+    private lateinit var inboxEntry: Button
 
     private fun <T : View> v(id: Int): T = findViewById(id)
 
@@ -116,6 +117,17 @@ class NodeActivity : Activity() {
 
         v<Button>(R.id.tvPairToggle).setOnClickListener { toggleTvPair() }
         v<Button>(R.id.tvPairButton).setOnClickListener { pairTv() }
+
+        inboxEntry = Button(this, null, 0, R.style.Btn_Ghost).apply {
+            text = "Inbox and Brain status"
+            minHeight = (48 * resources.displayMetrics.density).toInt()
+            setOnClickListener { startActivity(Intent(this@NodeActivity, InboxActivity::class.java)) }
+        }
+        val gap = (20 * resources.displayMetrics.density).toInt()
+        v<LinearLayout>(R.id.content).addView(
+            inboxEntry, 3, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { setMargins(gap, gap, gap, 0) },
+        )
 
         buildBrightness()
         v<CompoundButton>(R.id.ledSwitch).setOnCheckedChangeListener { _, on ->
@@ -205,6 +217,7 @@ class NodeActivity : Activity() {
         vis(R.id.fpSection, s == Screen.FINGERPRINT)
         vis(R.id.codeSection, s == Screen.CODE)
         vis(R.id.statusSection, s == Screen.STATUS)
+        inboxEntry.visibility = if (s == Screen.STATUS) View.VISIBLE else View.GONE
         if (s != Screen.SETUP) discovery.stop()
         if (s == Screen.SETUP) {
             vis(R.id.usePhoneFromSetup, Prefs.mode(this) == ControllerMode.VNODE)
