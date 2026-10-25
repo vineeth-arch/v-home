@@ -242,31 +242,15 @@ The backup holds the node's private key, the TV client key, and the phone token 
 ./vnode/deploy.sh backup
 ```
 
-This writes `vnode-backup-DATE-TIME.tar.gz` in the home folder of the `vnode` user on the Pi. Copy it to the Mac.
+This copies the archive to `vnode-backups/vnode-backup-DATE-TIME.tar.gz` in the repo on the Mac (that folder is git-ignored) and deletes the copy on the Pi. It holds credentials: the TV key, the node's private key and the phone token hashes. Keep it private.
+
+To restore, for example onto a fresh card after `./vnode/deploy.sh install`, pass the file from the Mac:
 
 ```bash
-scp 'vnode@vnode.local:vnode-backup-*.tar.gz' ~/
+./vnode/deploy.sh restore vnode-backups/vnode-backup-DATE-TIME.tar.gz
 ```
 
-To restore (for example onto a fresh card), first run the install so the Pi has the program.
-
-```bash
-./vnode/deploy.sh install
-```
-
-Copy the backup to the Pi (use your real file name).
-
-```bash
-scp ~/vnode-backup-DATE-TIME.tar.gz vnode@vnode.local:
-```
-
-Then connect and run the restore from the unpacked bundle, which the install leaves in `/tmp`.
-
-```bash
-ssh -t vnode@vnode.local sudo bash /tmp/vhome-vnode-bundle/vnode/install-pi.sh restore vnode-backup-DATE-TIME.tar.gz
-```
-
-The restore refuses an unsafe archive, saves the current state as a new backup first, restores, restarts the services, and runs the health check. `/tmp` is cleared on a Pi restart, so run `./vnode/deploy.sh install` again if you restart before restoring. The restore is not offered through `deploy.sh`.
+The restore refuses an unsafe archive, backs up the current state first, replaces the state (it does not merge), restarts the services and runs the health check. Restoring the backup keeps the same node id, so paired phones keep working.
 
 ## Revoking a phone
 
@@ -314,7 +298,7 @@ Results are blank on purpose. The orchestrator or the owner fills them in after 
 | Internet down, LAN up | Unplug the router's internet cable, keep Wi-Fi on, press Home; use the app on Wi-Fi | Still works, no cloud needed | not run yet |
 | Router restart | Restart the router, wait for Wi-Fi | Node reconnects by itself, Home works again, no TV prompt | not run yet |
 | Pi restart | Use Restart Pi in the app | Back in about a minute, Watching, no re-pairing | not run yet |
-| TV standby | Put the TV in standby, press Home on the remote after waking it | No redirect in standby, normal after wake | not run yet |
+| TV standby | Put the TV in standby, wake it, press Home | Redirect works after wake. This TV does not report its power state, so standby itself is not detected | not run yet |
 | TV cold boot | Switch the TV off at the wall, on again, press Home | Node reconnects, redirect works | not run yet |
 | 20 Home presses | 5 each from Netflix, YouTube, Prime Video, an HDMI input; record latency from `journalctl` | At least 19 of 20 redirected, none while inside an app or input | not run yet |
 | No takeover after a Wi-Fi blip | Turn the Pi's Wi-Fi off and on (or move the router) while watching | After reconnect it only acts if LG Home is in front | not run yet |
@@ -322,7 +306,7 @@ Results are blank on purpose. The orchestrator or the owner fills them in after 
 | Phone revocation | Revoke a phone, use it | Not paired any more; other phone unaffected | not run yet |
 | Multi-day run | Leave it running 3 days; check `vnode diag` | No restarts, no throttling, memory steady | not run yet |
 | Backup restore | Back up, wipe or use a spare card, install, restore | Same node id, phones still paired | not run yet |
-| LED heat test | On the Pi: `sudo bash /tmp/vhome-vnode-bundle/vnode/heat-test.sh 10 10 ~/heat.csv` | CSV shows temperature with LEDs off then on; stays below 60 C | not run yet |
+| LED heat test | On the Pi: `sudo bash /opt/vhome-vnode/current/vnode/heat-test.sh 30 30 ~/heat.csv` | CSV shows temperature with LEDs off then on; stays below 60 C | Passed 2026-10-25: 43.5 C off vs 43.3 C on, no throttling |
 
 ## Measured resource use
 
@@ -330,8 +314,8 @@ To be filled from `./vnode/deploy.sh diag` on the real Pi. The baseline before i
 
 | Measure | Value |
 |---|---|
-| Node process memory (RSS) | TBD (measured on the Pi) |
-| CPU, idle | TBD (measured on the Pi) |
-| Disk used after install | TBD (measured on the Pi) |
-| Temperature, idle, LEDs off | TBD (measured on the Pi) |
-| Temperature, idle, LEDs on | TBD (measured on the Pi) |
+| Node process memory (RSS) | 44.7 MB with the TV connected (29.7 MB before pairing); LED service 11.7 MB |
+| CPU, idle | 0.60 % node + 0.17 % LEDs, 5-minute average with the TV connected |
+| Disk used after install | 432 KB release + 3.8 MB packages; 848 MB still free |
+| Temperature, idle, LEDs off | 43.5 C mean over 30 min (TV connected) |
+| Temperature, idle, LEDs on | 43.3 C mean over 30 min: no measurable difference |

@@ -109,18 +109,25 @@ Only what was measured before the install, 2026-10-25 07:06 UTC, with no V/HOME 
 | Wi-Fi and time | wlan0 -67 to -69 dBm; NTP synchronized |
 | Packages | python3-aiohttp 3.11.16 and python3-websockets 15.0.1 available from apt; python3-libgpiod 2.2.1, polkitd 126, curl 8.14 already installed |
 
+After install, 2026-10-25 (release 0.1.0-f7baa2f, measured on the Pi):
+
 | Item | Result |
 |---|---|
-| Installer on the Pi | pending |
-| TV paired through the Pi | pending |
-| Home redirect from the Pi (20 trials) | pending |
-| Phone paired and controlling the node | pending |
+| Installer on the Pi | Works. apt pulled python3-aiohttp 3.11.16, python3-websockets 15.0.1 and their 7 dependencies (765 kB download, 3.8 MB on disk); the apt step took about 15 minutes on the single core. Health check passed in 1 s. Update to a new release kept the node certificate (same node id). |
+| Test suite on ARMv6 | All 222 Python tests pass on the Pi in 53 s (same suite as the Mac). |
+| Services | vhome-vnode and vhome-leds active, 0 restarts. Reached from the Mac at `https://vnode.local:8443/v1/info`. |
+| Phone discovery and pairing | The Samsung SM-A556E (Android 14, app 0.9.0) found "V/HOME node on vnode" by NSD at 192.168.29.9. Fingerprint shown on the phone matched `vnode pair-phone` (eb8d dd63 eeee 978c 6820 c558); paired with the code; the phone switched to VNode mode and its own watcher stopped (no service running). |
+| TV paired through the Pi | Paired with the LG TV at 192.168.29.225 from the phone (the Pi found the TV by SSDP); owner accepted the prompt; status shows Connected and the app in front live. |
+| TV power state | Not available on this TV: `getPowerState` answers "401 insufficient permissions" even with READ_POWER_STATE requested and after a fresh pairing. The phone's own watcher logged the same before this work. So standby cannot be detected on this model; the node keeps watching and its 10 s heartbeat falls back to a foreground read. |
+| Memory and CPU, TV connected | vhome-vnode RSS 44.7 MB (peak 44.8 MB), CPU 0.60 % over 5 minutes; vhome-leds RSS 11.7 MB, CPU 0.17 %. Whole Pi 145 of 426 MB used. Idle before the TV was paired: 29.7 MB and under 0.01 % CPU. |
+| Disk | Release 432 KB; packages 3.8 MB; 848 MB free on `/` after install. |
+| Memory limit | Raspberry Pi OS boots with `cgroup_disable=memory`, so `MemoryMax=` in the units is not enforced on this kernel. Measured use is far below it. |
+| LED heat test | 30 min LEDs off then 30 min on (brightness 2/31, Wi-Fi bars lit), TV connected, sample every 30 s: off mean 43.48 C (min 42.2, max 48.7 during the first minutes after the update), on mean 43.31 C (min 42.8, max 44.4); last 5 minutes 43.04 C off vs 43.26 C on. No throttling or under-voltage in either phase. The LEDs add no heat that this sensor can measure (under 0.3 C), so they stay on by default. The 70 C thermal guard never came close to triggering. |
+| Home redirect from the Pi (20 trials) | pending (owner at the TV) |
 | Mac asleep and phone away | pending |
 | Pi restart, router restart, TV cold boot | pending |
-| LED brightness, heat test, thermal guard | pending |
 | Multi-day run | pending |
 | Backup and restore | pending |
-| Memory, CPU, disk, temperature after install | pending |
 
 ### Capability values the node reports
 
