@@ -63,7 +63,6 @@ class InboxContractsTest {
         assertEquals("Cancelled", InboxRules.statusLabel("cancelled"))
         assertEquals("Unknown", InboxRules.statusLabel("unknown"))
         assertEquals("Unknown", InboxRules.statusLabel("something_new"))
-        assertEquals("Sent to VNode", InboxRules.SENT_LABEL)
         listOf("queued", "claimed", "processing", "completed", "failed", "cancelled", "unknown", "x").forEach {
             assertFalse(InboxRules.statusLabel(it).contains("processed", ignoreCase = true))
         }
@@ -164,7 +163,7 @@ class DraftStoreTest {
     @Test fun byteCapDropsOldest() {
         val big = "a".repeat(8192)
         val list = (1..40).map { d(it, big) } // would be 320 KB, but also count-capped: use a high count cap
-        val (kept, _) = DraftStore.enforce(list, maxCount = 100)
+        val (kept, _) = DraftStore.enforce(list, maxCount = 100, maxBytes = 300 * 1024)
         assertEquals(300 * 1024 / 8192, kept.size) // 37 x 8 KB = 296 KB
         assertEquals(40L, kept.last().createdAt)
     }

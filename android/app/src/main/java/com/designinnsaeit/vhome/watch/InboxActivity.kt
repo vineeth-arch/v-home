@@ -32,6 +32,11 @@ import okhttp3.Dns
  * nothing runs in the background. "Accepted by Brain" means Brain's inbox took it, never that it was processed.
  */
 class InboxActivity : Activity() {
+    private companion object {
+        // Shares are saved here, not in the activity scope, so a rotation or back press cannot lose one mid-read.
+        val shareScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var store: NodeStore
     private lateinit var drafts: DraftStore
@@ -46,7 +51,10 @@ class InboxActivity : Activity() {
     private lateinit var sendBtn: Button
 
     private var tab = 0
-    private var busy = false
+    private var sending = false // a submit / cancel / retry is in flight
+    private var refreshing = false
+    private var pendingRefresh = false
+    private val busy get() = sending || refreshing
     private var composeText = ""
     private var listError: String? = null
     private var jobs: List<InboxJob> = emptyList()
@@ -90,6 +98,11 @@ class InboxActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refresh()
+    }
+
+    override fun onStop() {
+        autoRefresh?.cancel(); pendingRefresh = false // resume refreshes anyway
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -147,78 +160,83 @@ class InboxActivity : Activity() {
         }
         if (stream == null && raw.isNullOrBlank()) return
         setIntent(Intent()) // handled: a rotation must not save it twice
-        if (stream != null) { shareFile(stream, i.type, raw); return }
-        val (text, cut) = InboxRules.truncateUtf8(raw!!)
+        if (stream != null) {
+            if (InboxRules.shareUriOk(stream.scheme, stream.authority, packageName)) { shareFile(stream, i.type, raw); return }
+            EventLog.add(this, "inbox share: refused a ${stream.scheme} uri")
+            if (raw.isNullOrBlank()) { setNotice("Couldn't open that file. Nothing was saved."); return }
+        }
+        shareText(raw!!)
+    }
+
+    private fun shareText(raw: String) {
+        val (text, cut) = InboxRules.truncateUtf8(raw)
         val notes = mutableListOf<String>()
         if (cut) notes += "Shared text was cut to 8 KB"
-        queueShared(text, InboxRules.detectKind(text), "", notes)
+        val app = this
+        shareScope.launch { app.saveShared(text, InboxRules.detectKind(text), "", isFile = false, cut = cut, notes = notes) }
     }
 
     private class SharedFile(val name: String?, val bytes: ByteArray?, val unreadable: Boolean)
 
-    /** A shared .md/.txt file: read off the main thread, capped, then handled like shared text. */
+    /**
+     * A shared .md/.txt file. Read and saved in shareScope, which outlives the activity, so a rotation during the read
+     * cannot lose it: the draft is saved and shows in the list even if this screen is gone.
+     */
     private fun shareFile(uri: Uri, mime: String?, fallbackText: String?) {
-        scope.launch {
-            val f = withContext(Dispatchers.IO) {
-                try {
-                    val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                        if (it.moveToFirst()) it.getString(0) else null
-                    }
-                    val input = contentResolver.openInputStream(uri)
-                    if (input == null) SharedFile(name, null, true) else SharedFile(name, input.use { InboxRules.readCapped(it) }, false)
-                } catch (e: Exception) { // SecurityException, FileNotFoundException, IOException, provider crashes
-                    SharedFile(null, null, true)
+        val resolver = contentResolver
+        val app = this
+        shareScope.launch {
+            val f = try {
+                val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                    if (it.moveToFirst()) it.getString(0) else null
                 }
+                val input = resolver.openInputStream(uri)
+                if (input == null) SharedFile(name, null, true) else SharedFile(name, input.use { InboxRules.readCapped(it) }, false)
+            } catch (e: Exception) { // SecurityException, FileNotFoundException, IOException, provider crashes
+                SharedFile(null, null, true)
             }
             val text = f.bytes?.let { InboxRules.decodeText(it) }
-            val notes = mutableListOf<String>()
-            when {
-                text != null && text.isNotBlank() -> queueShared(text, InboxRules.fileKind(f.name, mime), InboxRules.headerLabel(f.name), notes)
-                !fallbackText.isNullOrBlank() -> { // an app that sends both a file and text: keep the text
-                    val (t, cut) = InboxRules.truncateUtf8(fallbackText)
-                    if (cut) notes += "Shared text was cut to 8 KB"
-                    queueShared(t, InboxRules.detectKind(t), "", notes)
+            if (text != null && text.isNotBlank()) {
+                app.saveShared(text, InboxRules.fileKind(f.name, mime), InboxRules.headerLabel(f.name), isFile = true, cut = false, notes = mutableListOf())
+            } else if (!fallbackText.isNullOrBlank()) { // an app that sends both a file and text: keep the text
+                val (t, cut) = InboxRules.truncateUtf8(fallbackText)
+                app.saveShared(t, InboxRules.detectKind(t), "", isFile = false, cut = cut, notes = if (cut) mutableListOf("Shared text was cut to 8 KB") else mutableListOf())
+            } else {
+                val why = when {
+                    f.unreadable -> "Couldn't open the shared file. Nothing was saved."
+                    f.bytes == null -> "That file is over 256 KB, so it wasn't saved."
+                    text == null -> "Couldn't read that file as text. Nothing was saved."
+                    else -> "That file is empty. Nothing was saved."
                 }
-                else -> {
-                    val why = when {
-                        f.unreadable -> "Couldn't open the shared file. Nothing was saved."
-                        f.bytes == null -> "That file is over 256 KB, so it wasn't saved."
-                        text == null -> "Couldn't read that file as text. Nothing was saved."
-                        else -> "That file is empty. Nothing was saved."
-                    }
-                    EventLog.add(this@InboxActivity, "inbox share: $why")
-                    setNotice(why)
+                withContext(Dispatchers.Main) {
+                    EventLog.add(app, "inbox share: $why")
+                    if (!app.isDestroyed) app.setNotice(why)
                 }
             }
         }
     }
 
-    /** Auto-send when paired and on Wi-Fi; otherwise a draft (or, if a send is in progress, the compose box). */
-    private fun queueShared(text: String, kind: String, label: String, notes: MutableList<String>) {
-        val action = InboxRules.shareAction(store.isPaired(), HomeNetwork.wifiNetwork(this) != null, busy)
-        fun saveDraft(why: String?): Draft {
-            val a = drafts.add(text, kind = kind, label = label)
-            if (why != null) notes += why
-            if (!a.saved) notes += "Couldn't save draft"
-            if (a.dropped > 0) notes += "${a.dropped} oldest draft(s) were dropped"
-            return a.draft
+    /** Saves the share as a draft first (so its key exists), then sends it only if [InboxRules.shareAction] says so. */
+    private suspend fun saveShared(text: String, kind: String, label: String, isFile: Boolean, cut: Boolean, notes: MutableList<String>) {
+        val added = withContext(Dispatchers.IO) {
+            if (isFile && !DraftStore.fits(drafts.all(), InboxRules.bytes(text))) null // never evict other drafts for a file
+            else drafts.add(text, kind = kind, label = label)
         }
-        when {
-            action == InboxRules.ShareAction.SEND_NOW -> {
-                val d = saveDraft(null) // the draft (and its key) exists before the first attempt
-                setNotice(notes.joinToString(". ").ifEmpty { null })
-                sendDraft(d)
-                return
+        withContext(Dispatchers.Main) {
+            if (isDestroyed) return@withContext // the draft is saved and shows in the list next time
+            if (added == null) { setNotice("Too many drafts to add this file. Send or delete a draft first."); render(); return@withContext }
+            if (!added.saved) notes += "Couldn't save draft"
+            if (added.dropped > 0) notes += InboxRules.droppedText(added.dropped)
+            // Decided here, on the main thread, from the real send state: a running refresh does not matter.
+            when (InboxRules.shareAction(store.isPaired(), HomeNetwork.wifiNetwork(this@InboxActivity) != null, sending, isFile, cut)) {
+                InboxRules.ShareAction.SEND_NOW -> { setNotice(notes.joinToString(". ").ifEmpty { null }); sendDraft(added.draft); return@withContext }
+                InboxRules.ShareAction.DRAFT_UNPAIRED -> notes += "Phone not paired — saved as draft"
+                InboxRules.ShareAction.DRAFT_NO_WIFI -> notes += "Not on home Wi-Fi — saved as draft"
+                InboxRules.ShareAction.DRAFT_REVIEW -> notes += InboxRules.REVIEW_NOTICE
             }
-            action == InboxRules.ShareAction.PREFILL && !InboxRules.isFileKind(kind) && composeText.isBlank() -> {
-                setCompose(text); notes += InboxRules.REVIEW_NOTICE
-            }
-            action == InboxRules.ShareAction.DRAFT_UNPAIRED -> saveDraft("Phone not paired — saved as draft")
-            action == InboxRules.ShareAction.DRAFT_NO_WIFI -> saveDraft("Not on home Wi-Fi — saved as draft")
-            else -> saveDraft("Saved as draft. ${InboxRules.REVIEW_NOTICE}")
+            setNotice(notes.joinToString(". ").ifEmpty { null }) // empty string would show a blank amber bar
+            render()
         }
-        setNotice(notes.joinToString(". ").ifEmpty { null }) // empty string would show a blank amber bar
-        render()
     }
 
     // ---- Data --------------------------------------------------------------------------------------
@@ -239,8 +257,9 @@ class InboxActivity : Activity() {
     }
 
     private fun refresh() {
-        if (busy) return
-        setBusy(true)
+        if (refreshing || sending) { pendingRefresh = true; return } // runs once the current work is done
+        pendingRefresh = false
+        refreshing = true; syncState()
         scope.launch {
             try {
                 val c = client()
@@ -251,21 +270,27 @@ class InboxActivity : Activity() {
                 EventLog.add(this@InboxActivity, "inbox refresh failed: ${e.message}")
             }
             loaded = true
-            setBusy(false)
+            refreshing = false; syncState()
+            if (pendingRefresh) refresh()
         }
     }
 
     /** One refresh about 35 s after a send, when the delivery worker has had time to pick the job up. */
     private fun scheduleRefresh() {
         autoRefresh?.cancel()
-        autoRefresh = scope.launch { delay(InboxRules.AUTO_REFRESH_MS); refresh() }
+        autoRefresh = scope.launch { delay(InboxRules.AUTO_REFRESH_MS); refresh() } // refresh() queues itself if busy
     }
 
-    private fun setBusy(b: Boolean) { busy = b; syncCompose(); render() }
+    private fun syncState() { syncCompose(); render() }
 
     private fun sendDraft(d: Draft) {
-        if (busy) return
-        setBusy(true)
+        if (sending) return
+        sending = true; syncState()
+        doSend(d)
+    }
+
+    /** [sending] is already true. */
+    private fun doSend(d: Draft) {
         scope.launch {
             // NonCancellable: once the POST is confirmed Sent, the draft must go even if the screen is closing.
             val out = withContext(NonCancellable) {
@@ -274,7 +299,7 @@ class InboxActivity : Activity() {
                 } catch (e: InboxException) {
                     SubmitOutcome.NotDelivered((e.message ?: "Not delivered") + ". Saved as draft")
                 }
-                if (o is SubmitOutcome.Sent) drafts.remove(d.key)
+                if (o is SubmitOutcome.Sent) withContext(Dispatchers.IO) { drafts.remove(d.key) }
                 o
             }
             when (out) {
@@ -284,14 +309,14 @@ class InboxActivity : Activity() {
                     EventLog.add(this@InboxActivity, "inbox submit failed (${d.kind}, ${InboxRules.bytes(d.text)} B): ${out.message}")
                 }
             }
-            busy = false
+            sending = false
             refresh()
         }
     }
 
     private fun act(j: InboxJob, cancel: Boolean) {
         if (busy) return
-        setBusy(true)
+        sending = true; syncState()
         scope.launch {
             try {
                 val c = client()
@@ -301,7 +326,7 @@ class InboxActivity : Activity() {
                 sendResult = false to (e.message ?: "Failed")
                 EventLog.add(this@InboxActivity, "inbox ${if (cancel) "cancel" else "retry"} failed: ${e.message}")
             }
-            busy = false
+            sending = false
             refresh()
         }
     }
@@ -312,12 +337,19 @@ class InboxActivity : Activity() {
             InboxRules.Check.TOO_LARGE -> { sendResult = false to InboxRules.errorMessage(null, "too_large"); render(); return }
             InboxRules.Check.OK -> {}
         }
-        // The draft (and its key) exists before the first attempt, so every resend reuses the same key.
-        val a = drafts.add(composeText)
-        if (!a.saved) { setNotice("Couldn't save draft"); return } // keep the text on screen; nothing was sent
-        setCompose("")
-        if (a.dropped > 0) setNotice("${a.dropped} oldest draft(s) were dropped (limit ${InboxRules.MAX_DRAFTS}).")
-        sendDraft(a.draft)
+        if (sending) return
+        sending = true; syncState()
+        val text = composeText
+        scope.launch {
+            // The draft (and its key) exists before the first attempt, so every resend reuses the same key.
+            val a = withContext(NonCancellable + Dispatchers.IO) {
+                drafts.add(text).also { if (!it.saved) drafts.remove(it.draft.key) }
+            }
+            if (!a.saved) { sending = false; syncState(); setNotice("Couldn't save draft"); return@launch } // keep the text on screen; nothing was sent
+            setCompose("")
+            if (a.dropped > 0) setNotice("${InboxRules.droppedText(a.dropped)} (limit ${InboxRules.MAX_DRAFTS}).")
+            doSend(a.draft)
+        }
     }
 
     // ---- Render ------------------------------------------------------------------------------------
@@ -411,7 +443,7 @@ class InboxActivity : Activity() {
         val row = LinearLayout(context)
         val what = InboxUi.preview(d.text, 30)
         row.addView(ui.button("Send") { sendDraft(d) }.also { it.isEnabled = !busy; it.contentDescription = "Send draft: $what" })
-        row.addView(ui.button("Delete", R.style.Btn_Text) { drafts.remove(d.key); render() }.also { it.contentDescription = "Delete draft: $what" })
+        row.addView(ui.button("Delete", R.style.Btn_Text) { scope.launch { withContext(Dispatchers.IO) { drafts.remove(d.key) }; render() } }.also { it.contentDescription = "Delete draft: $what" })
         addView(row, ui.lp(8))
     }
 

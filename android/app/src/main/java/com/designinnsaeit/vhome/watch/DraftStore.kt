@@ -18,19 +18,27 @@ class DraftStore(private val file: File) {
     /** [saved] is false when the file could not be written (the draft then exists only in memory). */
     data class Added(val draft: Draft, val dropped: Int, val saved: Boolean = true)
 
-    @Synchronized fun all(): List<Draft> = load()
+    // In-memory copy so the screen can read drafts on the main thread without touching the file.
+    @Volatile private var cache: List<Draft>? = null
+
+    fun all(): List<Draft> = cache ?: synchronized(this) { cache ?: load().also { cache = it } }
 
     @Synchronized fun add(
         text: String, now: Long = System.currentTimeMillis(), key: String = InboxRules.newKey(),
         kind: String = InboxRules.detectKind(text), label: String = "",
     ): Added {
         val d = Draft(key, text, kind, now, label)
-        val (kept, dropped) = enforce(load() + d)
+        val (kept, dropped) = enforce(all() + d)
+        cache = kept
         return Added(d, dropped, save(kept))
     }
 
     /** Returns false when the file could not be written. */
-    @Synchronized fun remove(key: String): Boolean = save(load().filter { it.key != key })
+    @Synchronized fun remove(key: String): Boolean {
+        val kept = all().filter { it.key != key }
+        cache = kept
+        return save(kept)
+    }
 
     private fun load(): List<Draft> = try {
         val a = JSONArray(file.takeIf { it.exists() }?.readText() ?: "[]")
@@ -57,6 +65,10 @@ class DraftStore(private val file: File) {
     }
 
     companion object {
+        /** True when a new draft of [newBytes] fits without dropping any existing draft. */
+        fun fits(existing: List<Draft>, newBytes: Int, maxCount: Int = InboxRules.MAX_DRAFTS, maxBytes: Int = InboxRules.MAX_DRAFT_BYTES): Boolean =
+            existing.size < maxCount && existing.sumOf { InboxRules.bytes(it.text) } + newBytes <= maxBytes
+
         /** Oldest first in, oldest dropped first; the newest draft always stays. Returns (kept, number dropped). */
         fun enforce(list: List<Draft>, maxCount: Int = InboxRules.MAX_DRAFTS, maxBytes: Int = InboxRules.MAX_DRAFT_BYTES): Pair<List<Draft>, Int> {
             var kept = list

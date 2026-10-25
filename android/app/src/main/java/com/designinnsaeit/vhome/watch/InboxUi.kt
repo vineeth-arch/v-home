@@ -23,7 +23,9 @@ object InboxUi {
     fun draftTitle(d: Draft): String = d.label.ifEmpty { preview(d.text) }
 
     fun jobDetail(j: InboxJob): String? = when {
-        j.status == "failed" -> InboxRules.codeMessage(j.errorCode) ?: j.errorMsg
+        j.status == "failed" -> InboxRules.codeMessage(j.errorCode)
+            ?: InboxRules.errorMessage(null, j.errorCode).takeIf { !it.startsWith("Not delivered") }
+            ?: j.errorMsg?.takeIf { it.isNotBlank() }
             ?: "Brain couldn't take this item. Check Brain's Integrations page."
         j.status == "completed" ->
             (j.resultRef?.let { "In Brain · ${if (InboxRules.isFileKind(j.kind)) "file" else "note"} $it" } ?: "In Brain's inbox") +

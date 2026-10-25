@@ -2,6 +2,7 @@ package com.designinnsaeit.vhome.watch
 
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.util.UUID
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,12 +15,19 @@ class InboxAuditErrorsTest {
         assertEquals("Brain refused VNode's token. Re-issue it on Brain and update VNode.", InboxRules.codeMessage("brain_http_401"))
         assertEquals("Brain refused VNode's token. Re-issue it on Brain and update VNode.", InboxRules.codeMessage("brain_http_403"))
         assertEquals("Brain's login page is blocking VNode. Add the path to the Cloudflare Access bypass.", InboxRules.codeMessage("access_blocked"))
-        for (c in listOf("name_conflict", "write_failed", "bad_payload", "brain_http_500", "brain_http_502", "brain_http_422")) {
+        val phrases = mapOf(
+            "name_conflict" to "Rename the file", "write_failed" to "Check Brain's disk", "bad_payload" to "send it again",
+            "brain_http_500" to "Integrations page", "brain_http_502" to "Integrations page", "brain_http_422" to "send it again",
+        )
+        for ((c, phrase) in phrases) {
             val m = InboxRules.codeMessage(c)!!
-            assertTrue("$c: $m", m.count { it == '.' } >= 2) // what + cause + todo, short
-            assertTrue("$c: $m", m.length < 140)
+            assertTrue("$c: $m", m.contains(phrase))
+            assertTrue("$c: $m", m.length < 160)
             assertFalse(m.contains("Mac"))
         }
+        assertNull(InboxRules.codeMessage("brain_http_"))
+        assertNull(InboxRules.codeMessage("brain_http_abc"))
+        assertNull(InboxRules.codeMessage("brain_http_5000"))
         assertEquals(
             "Brain had a problem. It retries on its own; if it stays, check Brain's Integrations page.",
             InboxRules.codeMessage("brain_http_500"),
@@ -38,6 +46,14 @@ class InboxAuditErrorsTest {
 
     private fun failed(code: String?, msg: String?) =
         InboxJob("j1", "text", "", "failed", "t", 1, null, code, msg, false)
+
+    @Test fun failedJobDetailKeepsFriendlyKnownCodes() {
+        assertEquals("VNode queue is full, try later", InboxUi.jobDetail(failed("queue_full", null)))
+        assertEquals(InboxRules.errorMessage(null, "too_large"), InboxUi.jobDetail(failed("too_large", "x")))
+        assertEquals(InboxRules.errorMessage(null, "disk_reserve"), InboxUi.jobDetail(failed("disk_reserve", null)))
+        assertEquals(InboxRules.errorMessage(null, "rate_limited"), InboxUi.jobDetail(failed("rate_limited", null)))
+        assertTrue(InboxUi.jobDetail(failed("odd", "  "))!!.contains("Integrations"))
+    }
 
     @Test fun failedJobDetailNeverFallsBackToBareNotDelivered() {
         assertEquals(InboxRules.codeMessage("write_failed"), InboxUi.jobDetail(failed("write_failed", "disk")))
@@ -85,14 +101,59 @@ class InboxAuditWordingTest {
 }
 
 class InboxAuditShareTest {
-    @Test fun shareActionDecision() {
-        assertEquals(InboxRules.ShareAction.SEND_NOW, InboxRules.shareAction(paired = true, onWifi = true, busy = false))
-        assertEquals(InboxRules.ShareAction.PREFILL, InboxRules.shareAction(paired = true, onWifi = true, busy = true))
-        assertEquals(InboxRules.ShareAction.DRAFT_UNPAIRED, InboxRules.shareAction(paired = false, onWifi = true, busy = false))
-        assertEquals(InboxRules.ShareAction.DRAFT_NO_WIFI, InboxRules.shareAction(paired = true, onWifi = false, busy = false))
-        assertEquals("Review and tap Send", InboxRules.REVIEW_NOTICE)
+    private fun act(paired: Boolean = true, wifi: Boolean = true, sending: Boolean = false, file: Boolean = false, cut: Boolean = false) =
+        InboxRules.shareAction(paired, wifi, sending, file, cut)
+
+    @Test fun onlyPlainUncutTextAutoSends() {
+        assertEquals(InboxRules.ShareAction.SEND_NOW, act())
+        assertEquals(InboxRules.ShareAction.DRAFT_REVIEW, act(file = true))
+        assertEquals(InboxRules.ShareAction.DRAFT_REVIEW, act(cut = true))
+        assertEquals(InboxRules.ShareAction.DRAFT_REVIEW, act(sending = true)) // a send is already in flight
+        assertEquals(InboxRules.ShareAction.DRAFT_UNPAIRED, act(paired = false))
+        assertEquals(InboxRules.ShareAction.DRAFT_UNPAIRED, act(paired = false, file = true))
+        assertEquals(InboxRules.ShareAction.DRAFT_NO_WIFI, act(wifi = false))
+        assertEquals("Saved as draft. Review and tap Send.", InboxRules.REVIEW_NOTICE)
         assertEquals("Sent to VNode. It goes to Brain in about a minute.", InboxRules.SENT_NOTICE)
         assertEquals(35_000L, InboxRules.AUTO_REFRESH_MS)
+    }
+
+    @Test fun onlyContentUrisFromOtherAppsAreRead() {
+        val me = "com.designinnsaeit.vhome.watch"
+        assertTrue(InboxRules.shareUriOk("content", "com.android.providers.downloads.documents", me))
+        assertTrue(InboxRules.shareUriOk("CONTENT", "media", me))
+        assertFalse(InboxRules.shareUriOk("file", null, me))
+        assertFalse(InboxRules.shareUriOk("file", "", me))
+        assertFalse(InboxRules.shareUriOk(null, null, me))
+        assertFalse(InboxRules.shareUriOk("http", "example.com", me))
+        assertFalse(InboxRules.shareUriOk("content", me, me))
+        assertFalse(InboxRules.shareUriOk("content", "$me.fileprovider", me))
+        assertFalse(InboxRules.shareUriOk("content", null, me))
+        assertTrue(InboxRules.shareUriOk("content", "${me}x", me)) // a different package that merely shares a prefix
+    }
+
+    @Test fun fileDraftNeverEvictsOthers() {
+        fun d(i: Int, n: Int) = Draft(InboxRules.newKey(UUID.nameUUIDFromBytes(byteArrayOf(i.toByte()))), "a".repeat(n), "text", i.toLong())
+        assertTrue(DraftStore.fits(emptyList(), 256 * 1024))
+        assertTrue(DraftStore.fits(listOf(d(1, 700 * 1024)), 256 * 1024))
+        assertFalse(DraftStore.fits(listOf(d(1, 800 * 1024)), 256 * 1024))
+        assertFalse(DraftStore.fits((1..20).map { d(it, 1) }, 10))
+        assertEquals(1024 * 1024, InboxRules.MAX_DRAFT_BYTES)
+    }
+
+    @Test fun decodeStripsBom() {
+        assertEquals("hi", InboxRules.decodeText(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte(), 0x68, 0x69)))
+    }
+
+    @Test fun labelNeedsSomethingAlphanumericAndNoLeadingDots() {
+        assertEquals("hidden.md", InboxRules.headerLabel("..hidden.md"))
+        assertEquals("", InboxRules.headerLabel("..."))
+        assertEquals("", InboxRules.headerLabel(" . _- "))
+        assertEquals("a.md", InboxRules.headerLabel(".a.md"))
+    }
+
+    @Test fun pluralIsRight() {
+        assertEquals("1 oldest draft was dropped", InboxRules.droppedText(1))
+        assertEquals("3 oldest drafts were dropped", InboxRules.droppedText(3))
     }
 
     @Test fun fileKindFromNameThenMime() {

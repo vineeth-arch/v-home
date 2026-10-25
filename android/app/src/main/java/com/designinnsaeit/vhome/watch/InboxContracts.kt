@@ -77,7 +77,7 @@ object InboxRules {
     const val MAX_LABEL = 40
     const val AUTO_REFRESH_MS = 35_000L
     const val MAX_DRAFTS = 20
-    const val MAX_DRAFT_BYTES = 300 * 1024
+    const val MAX_DRAFT_BYTES = 1024 * 1024
     private val URL = Regex("^https?://\\S+$")
     private val KEY = Regex("^[A-Za-z0-9_-]{16,64}$")
 
@@ -113,18 +113,29 @@ object InboxRules {
 
     // ---- Share target -------------------------------------------------------------------------------
 
-    enum class ShareAction { SEND_NOW, PREFILL, DRAFT_UNPAIRED, DRAFT_NO_WIFI }
+    enum class ShareAction { SEND_NOW, DRAFT_REVIEW, DRAFT_UNPAIRED, DRAFT_NO_WIFI }
 
-    /** Paired and on Wi-Fi: send at once (the idempotency key makes a resend safe). Busy: let the owner review. Else a draft. */
-    fun shareAction(paired: Boolean, onWifi: Boolean, busy: Boolean): ShareAction = when {
+    /**
+     * Only a plain text/link share that was not cut, with the phone paired and on Wi-Fi and no send already running,
+     * goes out by itself. Any app can fire this share, so files and cut text wait for the owner to tap Send.
+     */
+    fun shareAction(paired: Boolean, onWifi: Boolean, sending: Boolean, isFile: Boolean, cut: Boolean): ShareAction = when {
         !paired -> ShareAction.DRAFT_UNPAIRED
         !onWifi -> ShareAction.DRAFT_NO_WIFI
-        busy -> ShareAction.PREFILL
+        isFile || cut || sending -> ShareAction.DRAFT_REVIEW
         else -> ShareAction.SEND_NOW
     }
 
-    const val REVIEW_NOTICE = "Review and tap Send"
+    const val REVIEW_NOTICE = "Saved as draft. Review and tap Send."
     const val SENT_NOTICE = "Sent to VNode. It goes to Brain in about a minute."
+
+    /** Shared files are read only from another app's content:// provider, never file:// and never this app's own. */
+    fun shareUriOk(scheme: String?, authority: String?, ownPackage: String): Boolean {
+        if (scheme?.lowercase() != "content" || authority.isNullOrEmpty()) return false
+        return authority != ownPackage && !authority.startsWith("$ownPackage.")
+    }
+
+    fun droppedText(n: Int) = if (n == 1) "1 oldest draft was dropped" else "$n oldest drafts were dropped"
 
     /** md for .md/.markdown names or markdown mime types, txt for everything else. */
     fun fileKind(name: String?, mime: String?): String {
@@ -135,7 +146,8 @@ object InboxRules {
     /** What the Pi would keep of a label anyway (ASCII letters, digits, space . _ -; 40 chars); non-ASCII would break a header. */
     fun headerLabel(name: String?): String {
         if (name.isNullOrEmpty()) return ""
-        return Normalizer.normalize(name, Normalizer.Form.NFKD).replace(Regex("[^A-Za-z0-9 ._-]"), "").trim().take(MAX_LABEL)
+        val clean = Normalizer.normalize(name, Normalizer.Form.NFKD).replace(Regex("[^A-Za-z0-9 ._-]"), "").trimStart('.', ' ').trim()
+        return if (clean.any { it.isLetterOrDigit() }) clean.take(MAX_LABEL) else ""
     }
 
     /** All bytes of [input], or null when it holds more than [max]. */
@@ -153,6 +165,11 @@ object InboxRules {
 
     /** Strict UTF-8 without NUL (what the Pi accepts), else null. */
     fun decodeText(b: ByteArray): String? {
+        val hasBom = b.size >= 3 && b[0] == 0xEF.toByte() && b[1] == 0xBB.toByte() && b[2] == 0xBF.toByte()
+        return decodeStrict(if (hasBom) b.copyOfRange(3, b.size) else b)
+    }
+
+    private fun decodeStrict(b: ByteArray): String? {
         val s = try {
             Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(b)).toString()
@@ -169,7 +186,6 @@ object InboxRules {
         "cancelled" -> "Cancelled"
         else -> "Unknown" // includes "unknown" and anything new
     }
-    const val SENT_LABEL = "Sent to VNode"
 
     enum class Tone { GOOD, WAIT, BAD, QUIET }
     fun statusTone(status: String): Tone = when (status) {
@@ -192,8 +208,8 @@ object InboxRules {
         code == "name_conflict" -> "Brain already has a different file with this name. VNode won't overwrite it. Rename the file and share it again."
         code == "write_failed" -> "Brain couldn't write the file. Its inbox folder may be full or read-only. Check Brain's disk, then Retry."
         code == "bad_payload" -> "Brain couldn't read this item. It may be malformed or not plain text. Check it and send it again."
-        code == "brain_http_429" || (code.startsWith("brain_http_5") && code.length == 14) -> BRAIN_PROBLEM
-        code.startsWith("brain_http_") -> "Brain refused this item (HTTP ${code.removePrefix("brain_http_")}). Check the item and send it again. If it keeps failing, check Brain's Integrations page."
+        code == "brain_http_429" || (Regex("brain_http_5\\d\\d").matches(code)) -> BRAIN_PROBLEM
+        Regex("brain_http_\\d{3}").matches(code) -> "Brain refused this item (HTTP ${code.removePrefix("brain_http_")}). Check the item and send it again. If it keeps failing, check Brain's Integrations page."
         else -> null
     }
 
