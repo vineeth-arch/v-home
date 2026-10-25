@@ -4,6 +4,9 @@
 # Commands: install | update | rollback | uninstall [--purge] | backup [OUT] | restore FILE | status | diag
 # Options:  --keep-wifi-powersave (leave Wi-Fi power save alone)   --no-leds (skip the LED service)
 #           --with-integrations (opt-in: also install vhome-integrations; a failure there never touches the TV release)
+#           --with-worker (opt-in, implies --with-integrations: delivery worker on the Pi, posts to Brain with the Mac off)
+#           --worker-env-file FILE (with --with-worker: BRAIN_URL, BRAIN_VNODE_TOKEN, optional BRAIN_ALLOW_HOST,
+#                                   CF_ACCESS_CLIENT_ID/SECRET, VNODE_WORKER_TOKEN; consumed and deleted)
 set -euo pipefail
 
 BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,12 +26,18 @@ INT_GROUP=vhome-intsock
 INT_STATE=/var/lib/vhome-integrations
 INT_SOCKET=/run/vhome-integrations/int.sock
 INT_WRAPPER=/usr/local/bin/vnode-int
+DELIVER_UNIT=vhome-int-deliver
+DELIVER_DIR=/etc/vhome-int
+DELIVER_ENV=$DELIVER_DIR/deliver.env
+DELIVER_STATE=/var/lib/vhome-int-deliver
 
 KEEP_WIFI=0
 NO_LEDS=0
 PURGE=0
 WITH_INT=0
 INT_OK=0
+WITH_WORKER=0
+WORKER_ENV_SRC=""
 
 log() { printf '== %s\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
@@ -183,6 +192,7 @@ int_prepare() {
 install_int_files() {
   put "$BUNDLE/vnode/systemd/vhome-integrations.service" "$UNIT_DIR/$INT_UNIT.service" 0644
   put "$BUNDLE/vnode/bin/vnode-int" "$INT_WRAPPER" 0755
+  if [ "$WITH_WORKER" = 1 ]; then put "$BUNDLE/vnode/systemd/$DELIVER_UNIT.service" "$UNIT_DIR/$DELIVER_UNIT.service" 0644; fi
 }
 
 # start_integrations: after the TV is healthy. On failure: disable integrations, warn, leave the TV alone.
@@ -194,6 +204,10 @@ start_integrations() {
   for i in $(seq 1 90); do   # Pi Zero W: first start took ~23 s (python imports)
     if systemctl is-active --quiet "$INT_UNIT" && [ -S "$INT_SOCKET" ]; then
       echo "integrations up after ${i}s"
+      # the delivery worker runs from the same `current` release: move it onto the new one too (best effort)
+      if systemctl is-enabled --quiet "$DELIVER_UNIT" 2>/dev/null; then
+        systemctl restart "$DELIVER_UNIT" || warn "$DELIVER_UNIT did not restart: journalctl -u $DELIVER_UNIT"
+      fi
       return 0
     fi
     sleep 1
@@ -202,6 +216,74 @@ start_integrations() {
   systemctl disable --now "$INT_UNIT" >/dev/null 2>&1 || true
   warn "integrations failed to start and were disabled; the TV release is untouched. Retry: install --with-integrations"
   return 1
+}
+
+# ---- delivery worker on the Pi (opt-in, only reached with --with-worker) ---------------------------
+
+# env_get FILE KEY: value of KEY=... (first match, surrounding quotes dropped).
+env_get() {
+  [ -f "$1" ] || return 0
+  sed -n "s/^$2=//p" "$1" | head -n 1 | sed -e "s/^[\"']//" -e "s/[\"']\$//"
+}
+
+# parse_minted_token: stdin is `vnode-int worker-token create` output; prints only the token.
+parse_minted_token() { sed -n 's/^token (shown once, store it now): //p' | head -n 1; }
+
+mint_worker_token() { "$INT_WRAPPER" worker-token create 2>/dev/null | parse_minted_token; }
+
+# write_deliver_env: build $DELIVER_ENV (0640 root:vhome-int) from WORKER_ENV_SRC. Tokens are never echoed.
+# Without a source file an existing deliver.env is kept (so a plain update needs no secrets).
+write_deliver_env() {
+  local url token wtoken host tmp cfid cfsec allow
+  if [ -z "$WORKER_ENV_SRC" ]; then
+    if [ -f "$DELIVER_ENV" ]; then echo "keeping existing $DELIVER_ENV"; return 0; fi
+    warn "no $DELIVER_ENV and no --worker-env-file: pass BRAIN_VNODE_TOKEN to deploy.sh --with-worker"
+    return 1
+  fi
+  [ -f "$WORKER_ENV_SRC" ] || { warn "worker env file $WORKER_ENV_SRC not found"; return 1; }
+  url="$(env_get "$WORKER_ENV_SRC" BRAIN_URL)"
+  token="$(env_get "$WORKER_ENV_SRC" BRAIN_VNODE_TOKEN)"
+  if [ -z "$url" ] || [ -z "$token" ]; then warn "worker env file needs BRAIN_URL and BRAIN_VNODE_TOKEN"; return 1; fi
+  allow="$(env_get "$WORKER_ENV_SRC" BRAIN_ALLOW_HOST)"
+  if [ -z "$allow" ]; then   # https://host[:port]/... -> host
+    host="${url#*://}"; host="${host%%/*}"; allow="${host%%:*}"
+  fi
+  cfid="$(env_get "$WORKER_ENV_SRC" CF_ACCESS_CLIENT_ID)"
+  cfsec="$(env_get "$WORKER_ENV_SRC" CF_ACCESS_CLIENT_SECRET)"
+  wtoken="$(env_get "$WORKER_ENV_SRC" VNODE_WORKER_TOKEN)"
+  [ -n "$wtoken" ] || wtoken="$(env_get "$DELIVER_ENV" VNODE_WORKER_TOKEN)"   # re-run keeps the same worker token
+  [ -n "$wtoken" ] || wtoken="$(mint_worker_token)"
+  [ -n "$wtoken" ] || { warn "could not mint a worker token (is $INT_UNIT running?)"; return 1; }
+  tmp="$(umask 077; mktemp)"
+  {
+    printf 'BRAIN_URL=%s\nBRAIN_ALLOW_HOST=%s\nBRAIN_VNODE_TOKEN=%s\n' "$url" "$allow" "$token"
+    if [ -n "$cfid" ] && [ -n "$cfsec" ]; then printf 'CF_ACCESS_CLIENT_ID=%s\nCF_ACCESS_CLIENT_SECRET=%s\n' "$cfid" "$cfsec"; fi
+    printf 'VNODE_SOCKET=%s\nVNODE_WORKER_TOKEN=%s\n' "$INT_SOCKET" "$wtoken"
+    printf 'WORKER_NAME=pi-deliver\nWORKER_POLL_S=60\nWORKER_MAX_PER_RUN=5\nWAIT_CLOCK_SYNC=1\n'
+  } > "$tmp"
+  install -d -o root -g "$INT_USER" -m 0750 "$DELIVER_DIR"
+  install -o root -g "$INT_USER" -m 0640 "$tmp" "$DELIVER_ENV"
+  rm -f "$tmp" "$WORKER_ENV_SRC"
+  echo "wrote $DELIVER_ENV (0640 root:$INT_USER)"
+}
+
+# setup_worker: after integrations are up. Never touches the TV or integrations; failure returns 1.
+setup_worker() {
+  log "Delivery worker"
+  local i
+  write_deliver_env || return 1
+  systemctl enable "$DELIVER_UNIT" >/dev/null 2>&1 || true
+  systemctl restart "$DELIVER_UNIT" || true
+  for i in $(seq 1 20); do   # a bad config exits 78 within seconds; python imports take ~10 s here
+    if ! systemctl is-active --quiet "$DELIVER_UNIT"; then
+      journalctl -u "$DELIVER_UNIT" -n 30 --no-pager || true
+      systemctl disable --now "$DELIVER_UNIT" >/dev/null 2>&1 || true
+      warn "delivery worker stopped right after start and was disabled. Fix the cause, then re-run with --with-worker"
+      return 1
+    fi
+    sleep 1
+  done
+  echo "delivery worker running"
 }
 
 # int_enabled: true when the integrations unit is enabled (it runs from the same current symlink as the TV).
@@ -214,10 +296,11 @@ int_failed_exit() {
 }
 
 uninstall_integrations() {
+  systemctl disable --now "$DELIVER_UNIT" 2>/dev/null || true
   systemctl disable --now "$INT_UNIT" 2>/dev/null || true
-  rm -f "$UNIT_DIR/$INT_UNIT.service" "$INT_WRAPPER"
+  rm -f "$UNIT_DIR/$DELIVER_UNIT.service" "$UNIT_DIR/$INT_UNIT.service" "$INT_WRAPPER"
   if [ "$PURGE" = 1 ]; then
-    rm -rf "${INT_STATE:?}"
+    rm -rf "${INT_STATE:?}" "${DELIVER_STATE:?}" "${DELIVER_DIR:?}"
     if id "$INT_USER" >/dev/null 2>&1; then userdel "$INT_USER" || true; fi
     if getent group "$INT_GROUP" >/dev/null; then groupdel "$INT_GROUP" || true; fi
   fi
@@ -421,7 +504,7 @@ cmd_install() {
     fi
     exit 1
   fi
-  local int_failed=0
+  local int_failed=0 worker_failed=0
   if [ "$WITH_INT" = 1 ] && [ "$INT_OK" = 1 ]; then
     start_integrations || int_failed=1
   elif [ "$WITH_INT" = 1 ]; then
@@ -429,8 +512,15 @@ cmd_install() {
   elif int_enabled; then
     start_integrations || int_failed=1   # plain update: integrations share `current`, so restart onto the new release
   fi
+  if [ "$WITH_WORKER" = 1 ] && [ "$WITH_INT" = 1 ] && [ "$int_failed" = 0 ]; then
+    setup_worker || worker_failed=1
+  fi
   echo "node id: $(node_id16)...  version: $(basename "$(readlink -f "$OPT/current")")"
   if [ "$int_failed" = 1 ]; then int_failed_exit; fi
+  if [ "$worker_failed" = 1 ]; then
+    echo "TV OK, integrations OK, delivery worker NOT running (see journalctl -u $DELIVER_UNIT)"
+    exit 3
+  fi
 }
 
 cmd_rollback() {
@@ -468,6 +558,7 @@ cmd_uninstall() {
     echo "kept $STATE (certificate, TV key, phone tokens) and user $SVC_USER; use --purge to remove them"
   fi
   if [ "$PURGE" != 1 ] && [ -d "$INT_STATE" ]; then echo "kept $INT_STATE and user $INT_USER (queued items); --purge removes them"; fi
+  if [ "$PURGE" != 1 ] && [ -f "$DELIVER_ENV" ]; then echo "kept $DELIVER_ENV (Brain token); --purge removes it"; fi
   echo "kept: apt packages, journald persistence is no longer configured (restart systemd-journald or reboot to apply)"
   echo "kept: Wi-Fi power save returns to the default on the next reconnect or reboot"
 }
@@ -573,14 +664,17 @@ cmd_diag() {
 # ---- main -----------------------------------------------------------------------------------
 
 usage() {
-  echo "usage: install-pi.sh install|update|rollback|uninstall [--purge]|backup [OUT]|restore FILE|status|diag [--keep-wifi-powersave] [--no-leds] [--with-integrations]"
+  echo "usage: install-pi.sh install|update|rollback|uninstall [--purge]|backup [OUT]|restore FILE|status|diag [--keep-wifi-powersave] [--no-leds] [--with-integrations] [--with-worker [--worker-env-file FILE]]"
 }
 
 main() {
   local cmd="" arg
   local -a pos=()
-  for arg in "$@"; do
+  while [ $# -gt 0 ]; do
+    arg="$1"; shift
     case "$arg" in
+      --with-worker) WITH_WORKER=1; WITH_INT=1 ;;
+      --worker-env-file) WORKER_ENV_SRC="${1:?--worker-env-file needs a path}"; shift ;;
       --keep-wifi-powersave) KEEP_WIFI=1 ;;
       --no-leds) NO_LEDS=1 ;;
       --with-integrations) WITH_INT=1 ;;

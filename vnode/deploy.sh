@@ -2,6 +2,13 @@
 # Mac: build the bundle, copy it to the Pi and run install-pi.sh there. You type the sudo password in the ssh session.
 # usage: deploy.sh [--host vnode.local] [--user vnode] [--stop-mac-watcher] [install|update|rollback|status|diag|backup|restore FILE|uninstall|int-status|int-inspect] [extra args]
 #   install|update accept --with-integrations (opt-in vhome-integrations; passed through to install-pi.sh).
+#   install|update also accept --with-worker (implies --with-integrations): the delivery worker runs ON the Pi and posts to
+#     Brain with the Mac off. Secrets come from environment variables on this Mac, never from arguments:
+#       BRAIN_VNODE_TOKEN (required the first time)   BRAIN_URL (default https://cockpit.vineethnair.com)
+#       BRAIN_ALLOW_HOST (default: host of BRAIN_URL)  CF_ACCESS_CLIENT_ID + CF_ACCESS_CLIENT_SECRET (optional, both)
+#       VNODE_WORKER_TOKEN (optional; default: minted on the Pi)
+#     They travel in a 0600 temp file (scp), which the Pi installer turns into /etc/vhome-int/deliver.env and deletes.
+#     Without BRAIN_VNODE_TOKEN an existing deliver.env on the Pi is kept as is.
 #   int-status / int-inspect only read from the Pi (no bundle is built or copied).
 #   backup copies the archive to ./vnode-backups/ on the Mac; restore FILE sends a Mac-side archive to the Pi.
 set -euo pipefail
@@ -29,10 +36,10 @@ esac
 
 # Read-only integrations views; sudo is typed in the ssh session. vnode-int itself runs sudo -u vhome-int.
 if [ "$CMD" = int-status ]; then
-  ssh -t "$USER_@$HOST" "systemctl status vhome-integrations --no-pager; vnode-int stats"
+  ssh -t "$USER_@$HOST" "systemctl status vhome-integrations --no-pager; systemctl status vhome-int-deliver --no-pager 2>&1 | head -n 12; vnode-int stats"
   exit 0
 elif [ "$CMD" = int-inspect ]; then
-  ssh -t "$USER_@$HOST" "sudo journalctl -u vhome-integrations -n 200 --no-pager; df -h / /var/lib/vhome-integrations; vnode-int stats"
+  ssh -t "$USER_@$HOST" "sudo journalctl -u vhome-integrations -n 200 --no-pager; sudo journalctl -u vhome-int-deliver -n 50 --no-pager; df -h / /var/lib/vhome-integrations; vnode-int stats"
   exit 0
 fi
 
@@ -62,6 +69,37 @@ if [ "$CMD" = restore ]; then
   set -- "/tmp/vnode-restore-$stamp.tar.gz" "$@"
 elif [ "$CMD" = backup ]; then
   set -- "/tmp/vnode-backup-$stamp.tar.gz"
+fi
+
+# --with-worker: hand the Brain settings to the Pi through a private file, not through argv or the terminal.
+WORKER_TMP=""
+WORKER_REMOTE=""
+want_worker=0
+for a in "$@"; do if [ "$a" = --with-worker ]; then want_worker=1; fi; done
+if [ "$want_worker" = 1 ] && [ -n "${BRAIN_VNODE_TOKEN:-}" ]; then
+  WORKER_TMP="$(umask 077; mktemp)"
+  # also runs when the installer exits non-zero (set -e), so the secrets file never lingers on either machine
+  cleanup_worker() {
+    rm -f "$WORKER_TMP"
+    # shellcheck disable=SC2029  # path expands on the Mac on purpose
+    if [ -n "$WORKER_REMOTE" ]; then ssh "$USER_@$HOST" "rm -f $WORKER_REMOTE" || true; fi
+  }
+  trap cleanup_worker EXIT
+  {
+    printf 'BRAIN_URL=%s\n' "${BRAIN_URL:-https://cockpit.vineethnair.com}"
+    printf 'BRAIN_VNODE_TOKEN=%s\n' "$BRAIN_VNODE_TOKEN"
+    if [ -n "${BRAIN_ALLOW_HOST:-}" ]; then printf 'BRAIN_ALLOW_HOST=%s\n' "$BRAIN_ALLOW_HOST"; fi
+    if [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ]; then
+      printf 'CF_ACCESS_CLIENT_ID=%s\nCF_ACCESS_CLIENT_SECRET=%s\n' "$CF_ACCESS_CLIENT_ID" "$CF_ACCESS_CLIENT_SECRET"
+    fi
+    if [ -n "${VNODE_WORKER_TOKEN:-}" ]; then printf 'VNODE_WORKER_TOKEN=%s\n' "$VNODE_WORKER_TOKEN"; fi
+  } > "$WORKER_TMP"
+  WORKER_REMOTE="/tmp/vnode-deliver-env-$stamp"
+  scp -q "$WORKER_TMP" "$USER_@$HOST:$WORKER_REMOTE"
+  rm -f "$WORKER_TMP"
+  set -- "$@" --worker-env-file "$WORKER_REMOTE"
+elif [ "$want_worker" = 1 ]; then
+  echo "BRAIN_VNODE_TOKEN is not set: keeping the delivery settings already on the Pi (if any)." >&2
 fi
 
 extra=""
