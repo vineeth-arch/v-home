@@ -119,7 +119,7 @@ def make_brain(state, tls=None):
             state["calls"].append((self.command, self.path, self.headers.get("X-Capture-Key"), self.headers.get("Authorization"), body))
             state.setdefault("hdrs", []).append(dict(self.headers))
             if self.path in state.get("redirect", ()):        # Cloudflare Access login redirect
-                self.send_response(302)
+                self.send_response(state.get("redirect_code", 302))
                 self.send_header("Location", "https://team.cloudflareaccess.com/login")
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -165,6 +165,8 @@ def mkjob(kind="text", key=None, payload=SECRET_TEXT.encode(), label="", created
 
 class Base(unittest.TestCase):
     def setUp(self):
+        W._STATE.clear()      # "log on change" and the soft-failure counter are per process; keep tests independent
+        W._SOFT.clear()
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.inbox = os.path.join(self.tmp, "inbox")
@@ -943,8 +945,16 @@ class TestPiHomeMain(Base):
     def test_waits_for_clock_before_any_brain_call(self):
         cfg = W.Config({"VNODE_SOCKET": "/x/int.sock", "VNODE_WORKER_TOKEN": "t", "BRAIN_VNODE_TOKEN": "b",
                         "WAIT_CLOCK_SYNC": "1"})
+        def tdc(out, rc=0):
+            return mock.Mock(return_value=mock.Mock(returncode=rc, stdout=out))
         with mock.patch.object(W.os.path, "exists", return_value=False):
-            self.assertFalse(W.clock_ready(cfg))
+            with mock.patch.object(W.subprocess, "run", tdc("no\n")):
+                self.assertFalse(W.clock_ready(cfg))
+            with mock.patch.object(W.subprocess, "run", side_effect=FileNotFoundError):
+                self.assertFalse(W.clock_ready(cfg))
+            with mock.patch.object(W.subprocess, "run", tdc("yes\n")) as run:     # chrony etc: timedatectl says synced
+                self.assertTrue(W.clock_ready(cfg))
+            self.assertEqual(run.call_args[0][0], ["timedatectl", "show", "-p", "NTPSynchronized", "--value"])
         with mock.patch.object(W.os.path, "exists", return_value=True):
             self.assertTrue(W.clock_ready(cfg))
         self.assertTrue(W.clock_ready(W.Config({"VNODE_SOCKET": "/x/int.sock", "VNODE_WORKER_TOKEN": "t", "BRAIN_VNODE_TOKEN": "b"})))
@@ -968,3 +978,127 @@ class TestPiHomeMain(Base):
     def test_main_from_env_missing_config_exits_78(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(W.main(["--once", "--from-env"]), 78)
+
+
+class TestReviewRound(Base):
+    """Independent review fixes: caps, wording, secret scrubbing, redirects, URL strictness, main-loop timing."""
+
+    def test_soft_cap_covers_404_408_429_and_bad_json_not_auth(self):
+        for kind in ((404, "http_404"), (408, "http_408"), (429, "http_429"), (200, "bad_json")):
+            W._SOFT.clear()
+            self.pi_state["calls"].clear()
+            job, p = mkjob()
+            cfg, pi, brain = self.parts()
+            err = BrainError(True, kind[0], kind[1])
+            with mock.patch.object(BrainClient, "capture_text", side_effect=err):
+                for n in range(8):
+                    self.pi_state["queue"].append(job)
+                    self.pi_state["payloads"][job["id"]] = p
+                    W.run_once(cfg, pi, brain, self.ledger, True, sleep=lambda s: None)
+            f = self.pi_posts("fail")
+            self.assertEqual(len(f), 1, kind)
+            self.assertTrue(f[0][3]["retryable"], kind)
+            self.assertEqual(len(self.pi_posts("reconcile")), 7, kind)
+
+    def test_retryable_non_5xx_wording(self):
+        self.assertEqual(explain(BrainError(True, 404, "http_404")), "Brain didn't take this yet \u2014 VNode will try again.")
+        self.assertEqual(explain(BrainError(True, 429, "http_429", "slow down")),
+                         "Brain didn't take this yet \u2014 VNode will try again. Brain said: slow down")
+        self.assertIn("did not accept", explain(BrainError(False, 422, "http_422")))
+
+    def test_only_login_redirect_statuses_are_access_blocked(self):
+        for code in (301, 302, 303, 307, 308):
+            self.brain_state["redirect"] = ["/api/status"]
+            self.brain_state["redirect_code"] = code
+            with self.assertRaises(BrainError) as cm:
+                self.parts()[2].status()
+            self.assertEqual(cm.exception.code, "access_blocked", code)
+        self.brain_state["redirect_code"] = 304
+        with self.assertRaises(BrainError) as cm:
+            self.parts()[2].status()
+        self.assertEqual((cm.exception.code, cm.exception.retryable), ("http_304", True))
+
+    def test_literal_tokens_scrubbed_from_brain_what(self):
+        self.brain_state["capture_code"] = 500
+        self.brain_state["capture_err"] = {"error": {"what": "echo %s and %s and %s" % (BRAIN_TOKEN, "cfsec-9999", "cfid-1234")}}
+        cfg = self.parts()[0]
+        brain = BrainClient(cfg.brain_url, BRAIN_TOKEN, cf_id="cfid-1234", cf_secret="cfsec-9999")
+        with self.assertRaises(BrainError) as cm:
+            brain.capture_text("x", "k" * 16)
+        for secret in (BRAIN_TOKEN, "cfsec-9999", "cfid-1234"):
+            self.assertNotIn(secret, cm.exception.what)
+            self.assertNotIn(secret, explain(cm.exception))
+        self.assertIn("<redacted>", cm.exception.what)
+
+    def test_parse_url_is_strict(self):
+        ok = "cockpit.vineethnair.com"
+        for url, allow in (("https://cockpit.vineethnair.com./x", ok), ("https://cockpit.vineethnair.com.", ok + "."),
+                           ("https://cockpit.vineethnair.com", ok + "."),            # trailing dot never matches
+                           ("https://cockpit.vineethnair.com", ok + ":443"),          # allow host is a bare host
+                           ("https://cockpit.vineethnair.com", ok + "/"),
+                           ("https://b\u00fccher.example", "b\u00fccher.example"),     # international names: use xn--
+                           ("https://xn--bcher-kva.example", "b\u00fccher.example"),
+                           ("https://cockpit.vineethnair.com\\@evil.example", ok),
+                           ("https://evil.example\\.cockpit.vineethnair.com", ok),
+                           ("https://cockpit.vineethnair.com\n", ok), ("https://a..b.example", "a..b.example"),
+                           ("https://-bad.example", "-bad.example"), ("https:// cockpit.vineethnair.com", ok)):
+            with self.assertRaises(ValueError, msg=url):
+                parse_url(url, allow)
+        self.assertEqual(parse_url("https://xn--bcher-kva.example:8443/a", "xn--bcher-kva.example"),
+                         ("https", "xn--bcher-kva.example", 8443))
+        self.assertEqual(parse_url("https://COCKPIT.vineethnair.com", "Cockpit.VineethNair.com")[1], ok)
+
+    def test_brain_timeout_is_20s(self):
+        from vhome_companion.integrations.worker import brain_client as bc
+        self.assertEqual(bc.TIMEOUT_S, 20)
+        self.assertEqual(self.parts()[2].timeout, 20)
+
+
+class TestMainLoopTiming(Base):
+    class Stop(Exception):
+        pass
+
+    def run_main(self, run_once=None, clock=True, poll="60"):
+        sockdir = tempfile.mkdtemp(prefix="vh")
+        self.addCleanup(shutil.rmtree, sockdir, True)
+        env = {"VNODE_SOCKET": os.path.join(sockdir, "int.sock"), "VNODE_WORKER_TOKEN": PI_TOKEN, "BRAIN_VNODE_TOKEN": BRAIN_TOKEN,
+               "STATE_DIRECTORY": os.path.join(self.tmp, "st"), "WORKER_POLL_S": poll, "WAIT_CLOCK_SYNC": "1"}
+        waits = []
+
+        def fake_sleep(s):
+            waits.append(s)
+            if len(waits) >= 4:
+                raise self.Stop
+        hb = mock.Mock()
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(W.time, "sleep", fake_sleep), \
+                mock.patch.object(W, "clock_ready", return_value=clock), \
+                mock.patch.object(W, "run_once", run_once or mock.Mock(return_value=False)) as ro, \
+                mock.patch.object(UnixPiClient, "heartbeat", hb), self.assertLogs("vnode-worker", "INFO") as cm:
+            with self.assertRaises(self.Stop):
+                W.main(["--live", "--from-env"])
+        return waits, ro, hb, cm.output
+
+    def test_backoff_is_capped_below_worker_stale(self):
+        waits, ro, _, _ = self.run_main(mock.Mock(return_value=True))
+        self.assertEqual(waits, [120.0, 150.0, 150.0, 150.0])
+        self.assertLess(max(waits), contracts.WORKER_STALE_S)
+        self.assertEqual(ro.call_count, 4)                     # run_once (which sends the heartbeat) ran every cycle
+
+    def test_healthy_polls_at_the_configured_rate(self):
+        waits, _, _, _ = self.run_main(mock.Mock(return_value=False))
+        self.assertEqual(waits, [60.0] * 4)
+
+    def test_clock_wait_checks_every_30s_heartbeats_and_logs_once(self):
+        waits, ro, hb, out = self.run_main(clock=False)
+        self.assertEqual(waits, [30.0] * 4)
+        self.assertEqual(ro.call_count, 0)                     # nothing sent to Brain
+        self.assertEqual(hb.call_count, 4)                     # but the phone still sees a live worker
+        self.assertEqual(len([l for l in out if "waiting for the clock" in l]), 1)
+
+    def test_steady_conditions_log_once(self):
+        cfg, pi, brain = self.parts(brain_port=dead_port())
+        with self.assertLogs("vnode-worker", "INFO") as cm:
+            for _ in range(3):
+                W.run_once(cfg, pi, brain, self.ledger, True, sleep=lambda s: None)
+            logging.getLogger("vnode-worker").info("sentinel")
+        self.assertEqual(len([l for l in cm.output if "brain unreachable" in l]), 1)

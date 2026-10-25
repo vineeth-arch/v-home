@@ -12,12 +12,13 @@ import urllib.parse
 
 from .. import contracts
 
-TIMEOUT_S = 10
+TIMEOUT_S = 20      # Brain behind Cloudflare from a Pi Zero: TLS + first byte can take a while
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
 NON_RETRYABLE = (400, 413, 422)     # the Brain judged this payload bad; everything else may succeed later
 AUTH = (401, 403)
+LOGIN_REDIRECTS = (301, 302, 303, 307, 308)     # what Cloudflare Access answers; never followed
 _WHAT_KEYS = ("what", "detail", "message", "error")
 
 
@@ -42,13 +43,16 @@ def explain(e: "BrainError") -> str:
         msg = "VNode could not reach Brain. It will try again."
     elif e.status >= 500:
         msg = "Brain had an error. VNode will try again."
+    elif e.retryable:
+        msg = "Brain didn't take this yet \u2014 VNode will try again."
     else:
         msg = "Brain did not accept this item (HTTP %d)." % e.status
     return msg + (" Brain said: " + e.what if e.what else "")
 
 
-def _what(raw: bytes) -> str:
-    """Short, single-line, redacted reason from Brain's error envelope. Never the raw body."""
+def _what(raw: bytes, secrets=()) -> str:
+    """Short, single-line, redacted reason from Brain's error envelope. Never the raw body.
+    The literal tokens VNode holds are scrubbed too, in case Brain echoes a header back."""
     try:
         d = json.loads(raw)
     except ValueError:
@@ -59,20 +63,34 @@ def _what(raw: bytes) -> str:
         return ""
     for k in _WHAT_KEYS:
         if isinstance(d.get(k), str) and d[k].strip():
-            return re.sub(r"\s+", " ", contracts.redact(d[k])).strip()[:60]
+            text = d[k]
+            for secret in secrets:
+                if secret:
+                    text = text.replace(secret, "<redacted>")
+            return re.sub(r"\s+", " ", contracts.redact(text)).strip()[:60]
     return ""
+
+
+_HOST = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*")   # no trailing dot, no empty labels
 
 
 def parse_url(url: str, allow_host: str = ""):
     """(scheme, host, port). http only to loopback (the token never leaves this machine in clear);
     https only to exactly allow_host, which must be set on purpose (BRAIN_ALLOW_HOST)."""
+    if any(c in url for c in "\\ \t\r\n") or not url.isascii():
+        raise ValueError("BRAIN_URL must be a plain ASCII URL (use the xn-- form for international names)")
     u = urllib.parse.urlsplit(url)
     host = (u.hostname or "").lower()
     if u.username or u.password:
         raise ValueError("BRAIN_URL must not contain credentials")
+    allow_host = allow_host.strip().lower()
+    if allow_host and not _HOST.fullmatch(allow_host):
+        raise ValueError("BRAIN_ALLOW_HOST must be a bare host name (no port, path or trailing dot)")
+    if host not in LOOPBACK and not _HOST.fullmatch(host):
+        raise ValueError("BRAIN_URL host is not a plain host name")
     if u.scheme == "http" and host in LOOPBACK:
         return "http", host, u.port or 80
-    if u.scheme == "https" and host and allow_host and host == allow_host.strip().lower():
+    if u.scheme == "https" and host and allow_host and host == allow_host:
         return "https", host, u.port or 443
     raise ValueError("BRAIN_URL must be http://127.0.0.1 / localhost (loopback only), "
                      "or https://<host> with BRAIN_ALLOW_HOST=<that host>")
@@ -83,6 +101,7 @@ class BrainClient:
                  allow_host: str = "", ssl_context: ssl.SSLContext | None = None):
         self.scheme, self.host, self.port = parse_url(url, allow_host)
         self.token, self.timeout = token, timeout
+        self._secrets = (token, cf_id, cf_secret)
         self.cf = {"CF-Access-Client-Id": cf_id, "CF-Access-Client-Secret": cf_secret} if cf_id and cf_secret else {}
         self._ctx = ssl_context or (ssl.create_default_context() if self.scheme == "https" else None)   # real cert checks
         self.auth_error = False     # last answer was 401/403 or a login redirect; shown in the next snapshot
@@ -115,12 +134,13 @@ class BrainClient:
             conn.close()
         self.transport_down = False
         ctype = resp.getheader("Content-Type") or ""
-        blocked = 300 <= resp.status < 400      # Cloudflare Access login redirect (never followed)
+        blocked = resp.status in LOGIN_REDIRECTS      # Cloudflare Access login redirect (never followed)
         self.auth_error = resp.status in AUTH or blocked
         if blocked:
             raise BrainError(True, resp.status, "access_blocked")
-        if resp.status >= 400:
-            raise BrainError(resp.status not in NON_RETRYABLE, resp.status, "http_%d" % resp.status, _what(raw))
+        if resp.status >= 300:              # other 3xx (304, 300, ...) and every 4xx/5xx
+            raise BrainError(resp.status not in NON_RETRYABLE, resp.status, "http_%d" % resp.status,
+                             _what(raw, self._secrets))
         try:
             out = json.loads(raw) if raw else {}
         except ValueError:

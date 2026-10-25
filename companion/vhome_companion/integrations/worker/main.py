@@ -12,6 +12,7 @@ import os
 import re
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -23,6 +24,8 @@ from .ledger import Ledger
 from .pi_client import PayloadMismatch, PinMismatch, PiClient, PiError, UnixPiClient
 
 VERSION = "0.2.0"
+CLOCK_CHECK_S = 30.0
+BACKOFF_CAP_S = 150.0          # below contracts.WORKER_STALE_S (180): "Mac not reporting" must not show for a live worker
 CLOCK_SYNC_FILE = "/run/systemd/timesync/synchronized"   # systemd-timesyncd; same signal the node service uses
 log = logging.getLogger("vnode-worker")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -189,13 +192,26 @@ def _safe_fail(pi, job, code, msg, retryable):
 
 
 SOFT_CAP = 8
+_STATE: dict = {}    # message key -> last text logged, so a steady condition is logged once, not every poll
+
+
+def log_change(key, level, msg):
+    if _STATE.get(key) != msg:
+        _STATE[key] = msg
+        log.log(level, msg)
+
+
+def log_clear(key):
+    _STATE.pop(key, None)
+
+
 SOFT_CAP_TEXT = "Brain kept failing on this item. Tap Retry later, or check Brain's Integrations page."
 _SOFT: dict = {}     # job id -> consecutive Brain 5xx / bad-reply count (this process only)
 
 
 def _job_suspect(jid, e) -> bool:
-    """Count Brain 5xx / bad_json against the job; auth, access and transport trouble is never the job's fault."""
-    if e.status >= 500 or e.code == "bad_json":
+    """Count Brain 5xx / 404 / 408 / 429 / bad_json against the job; auth, access and transport trouble is never its fault."""
+    if e.status >= 500 or e.status in (404, 408, 429) or e.code == "bad_json":
         _SOFT[jid] = _SOFT.get(jid, 0) + 1
         return _SOFT[jid] >= SOFT_CAP
     _SOFT.pop(jid, None)
@@ -340,8 +356,9 @@ def run_once(cfg, pi, brain, ledger, live, sleep=time.sleep) -> bool:
     reconcile_unknown(cfg, pi, ledger, live)
     # /api/status can be blocked (Access) while /api/capture works, so only a dead transport stops claiming.
     if getattr(brain, "transport_down", False):
-        log.info("brain unreachable; not claiming this pass")
+        log_change("brain", logging.INFO, "brain unreachable; not claiming until it answers")
         return True
+    log_clear("brain")
     if not live:
         job = pi.claim("mac-dry-run")
         if job:
@@ -357,9 +374,11 @@ def run_once(cfg, pi, brain, ledger, live, sleep=time.sleep) -> bool:
         if i:
             sleep(contracts.WORKER_PACE_S)
         if process(cfg, pi, brain, ledger, job):
-            log.warning("stopping this pass (brain or pi unhealthy)")
+            log_change("stop", logging.WARNING, "stopping this pass (brain or pi unhealthy)")
             stopped = True
             break
+    if not stopped:
+        log_clear("stop")
     if getattr(brain, "captured", 0) > captured and (not snap["reachable"] or snap["auth_error"]):
         # a capture just succeeded, so Brain is usable whatever /api/status said: fix what the phone sees
         brain.auth_error = False
@@ -369,8 +388,15 @@ def run_once(cfg, pi, brain, ledger, live, sleep=time.sleep) -> bool:
 
 
 def clock_ready(cfg) -> bool:
-    """TLS to Brain needs a real date; a Pi Zero has no RTC. Only enforced when WAIT_CLOCK_SYNC=1."""
-    return not cfg.wait_clock or os.path.exists(CLOCK_SYNC_FILE)
+    """TLS to Brain needs a real date; a Pi Zero has no RTC. Only enforced when WAIT_CLOCK_SYNC=1.
+    systemd-timesyncd's marker file, else timedatectl's answer (chrony / other NTP clients)."""
+    if not cfg.wait_clock or os.path.exists(CLOCK_SYNC_FILE):
+        return True
+    try:
+        r = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"], capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and r.stdout.strip() == "yes"
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def ledger_path():
@@ -396,20 +422,30 @@ def main(argv=None) -> int:
     log.info("worker %s started mode=%s via=%s", VERSION, "LIVE" if a.live else "dry-run", "unix socket" if cfg.socket else "tls")
     slow = 0
     while True:
-        wait = cfg.poll_s
         if not clock_ready(cfg):
-            log.info("waiting for the clock to sync before talking to Brain")
-            wait = 10.0
+            log_change("clock", logging.INFO, "waiting for the clock to sync before talking to Brain")
+            try:
+                pi.heartbeat(socket.gethostname()[:30], VERSION, "live" if a.live else "dry_run")   # alive, just not delivering yet
+            except (PiError, PinMismatch):
+                pass
+            wait = CLOCK_CHECK_S
         else:
+            if "clock" in _STATE:
+                log_clear("clock")
+                log.info("clock is synced")
             try:
                 slow = slow + 1 if run_once(cfg, pi, brain, ledger, a.live) else 0
+                log_clear("pi")
+                log_clear("pass")
             except PinMismatch:
-                log.error("pi certificate pin mismatch; nothing sent")
+                log_change("pi", logging.ERROR, "pi certificate pin mismatch; nothing sent")
             except PiError as e:
-                log.warning("pi: %s", e)
+                log_change("pi", logging.WARNING, "pi: %s" % e)
             except Exception as e:      # never crash-loop
-                log.error("pass failed: %s", contracts.redact(type(e).__name__))
-            wait = min(cfg.poll_s * 2 ** min(slow, 4), 600.0)    # Brain trouble: poll less often, fewer SD writes
+                log_change("pass", logging.ERROR, "pass failed: %s" % contracts.redact(type(e).__name__))
+            # Brain trouble: poll less often (fewer SD writes), but always inside WORKER_STALE_S so the phone keeps
+            # seeing a live worker; run_once sends a heartbeat every cycle.
+            wait = min(cfg.poll_s * 2 ** min(slow, 4), BACKOFF_CAP_S)
         if a.once:
             return 0
         time.sleep(wait)

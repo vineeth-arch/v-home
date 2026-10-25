@@ -7,13 +7,15 @@ After=network-online.target time-sync.target
 
 [Service]
 Type=simple
-# Same user and group as vhome-integrations: owns /run/vhome-integrations/int.sock (0660 group vhome-intsock).
-User=vhome-int
+# Its own user, not vhome-int: it holds the Brain token and talks to the internet, so it must not be able to read the queue
+# database or payload files (vhome-int, 0700). Group vhome-intsock is all it needs to open int.sock (0660) and nothing else.
+User=vhome-deliver
 Group=vhome-intsock
 Environment=PYTHONPATH=/opt/vhome-vnode/current
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
-# 0640 root:vhome-int, written by install-pi.sh --with-worker. Holds the Brain token (and Access service token if used).
+# 0600 root:root, written by install-pi.sh --with-worker; systemd reads it as root, the service user cannot.
+# Holds the Brain token (and the Access service token if used).
 EnvironmentFile=/etc/vhome-int/deliver.env
 ExecStart=/usr/bin/python3 -m vhome_companion.integrations.worker.main --live --from-env
 # /var/lib/vhome-int-deliver holds only the delivery ledger (delivered.db).
@@ -32,12 +34,19 @@ LogRateLimitBurst=100
 
 # Resource limits: the TV controller always wins on a one-core Pi Zero W.
 MemoryMax=48M
-CPUQuota=20%
+CPUQuota=40%
 TasksMax=16
 Nice=15
 IOWeight=10
 
-# Hardening: same block as vhome-integrations.service; sockets are the unix socket plus outbound https to Brain.
+# Hardening: same block as vhome-integrations.service (sockets are the unix socket plus outbound https to Brain), plus
+# what costs nothing here. MemoryDenyWriteExecute is left out on purpose: not testable on the Pi, and a JIT or ctypes
+# user in the Python stack would die at start. systemd on the Pi is 257, so every directive below exists.
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+SystemCallFilter=@system-service
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

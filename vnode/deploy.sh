@@ -76,15 +76,15 @@ WORKER_TMP=""
 WORKER_REMOTE=""
 want_worker=0
 for a in "$@"; do if [ "$a" = --with-worker ]; then want_worker=1; fi; done
+# also runs when the installer or scp fails (set -e), so the secrets file never lingers on either machine
+cleanup_worker() {
+  if [ -n "$WORKER_TMP" ]; then rm -f "$WORKER_TMP"; fi
+  # shellcheck disable=SC2029  # path expands on the Mac on purpose
+  if [ -n "$WORKER_REMOTE" ]; then ssh "$USER_@$HOST" "rm -f $WORKER_REMOTE" || true; fi
+}
+trap cleanup_worker EXIT
 if [ "$want_worker" = 1 ] && [ -n "${BRAIN_VNODE_TOKEN:-}" ]; then
   WORKER_TMP="$(umask 077; mktemp)"
-  # also runs when the installer exits non-zero (set -e), so the secrets file never lingers on either machine
-  cleanup_worker() {
-    rm -f "$WORKER_TMP"
-    # shellcheck disable=SC2029  # path expands on the Mac on purpose
-    if [ -n "$WORKER_REMOTE" ]; then ssh "$USER_@$HOST" "rm -f $WORKER_REMOTE" || true; fi
-  }
-  trap cleanup_worker EXIT
   {
     printf 'BRAIN_URL=%s\n' "${BRAIN_URL:-https://cockpit.vineethnair.com}"
     printf 'BRAIN_VNODE_TOKEN=%s\n' "$BRAIN_VNODE_TOKEN"
@@ -94,9 +94,10 @@ if [ "$want_worker" = 1 ] && [ -n "${BRAIN_VNODE_TOKEN:-}" ]; then
     fi
     if [ -n "${VNODE_WORKER_TOKEN:-}" ]; then printf 'VNODE_WORKER_TOKEN=%s\n' "$VNODE_WORKER_TOKEN"; fi
   } > "$WORKER_TMP"
-  WORKER_REMOTE="/tmp/vnode-deliver-env-$stamp"
+  # a 0600 file in the Pi user's home, not a guessable name in /tmp; named before scp so the trap can always remove it
+  WORKER_REMOTE="$(ssh "$USER_@$HOST" 'umask 077; mktemp ~/.vnode-deliver-env.XXXXXX')"
   scp -q "$WORKER_TMP" "$USER_@$HOST:$WORKER_REMOTE"
-  rm -f "$WORKER_TMP"
+  rm -f "$WORKER_TMP"; WORKER_TMP=""
   set -- "$@" --worker-env-file "$WORKER_REMOTE"
 elif [ "$want_worker" = 1 ]; then
   echo "BRAIN_VNODE_TOKEN is not set: keeping the delivery settings already on the Pi (if any)." >&2
@@ -118,4 +119,13 @@ if [ "$CMD" = backup ]; then
 elif [ "$CMD" = restore ]; then
   # shellcheck disable=SC2029  # stamp expands on the Mac on purpose
   ssh "$USER_@$HOST" "rm -f /tmp/vnode-restore-$stamp.tar.gz"
+fi
+
+if [ "$want_worker" = 1 ] && { [ "$CMD" = install ] || [ "$CMD" = update ]; }; then
+  cat <<'NEXT'
+
+== NEXT STEP (do this now): stop the Mac delivery worker. Two workers must not run together.
+   launchctl bootout gui/$UID/com.designinnsaeit.vhome-int-worker
+   (undo later with: bash companion/install-worker.sh --load)
+NEXT
 fi
