@@ -71,6 +71,22 @@ Capabilities: `launch, pause, tv_pair, diagnostics, device_controls, leds` = `su
 - One power action (restart-service, reboot or shutdown) per 60 s, otherwise 429.
 - After a shutdown the Pi only comes back after its power is unplugged and plugged in again.
 
+### Health (everything at a glance)
+`GET /v1/health` (Bearer) → one list the app renders as-is; the node decides each level so phone and Pi never disagree.
+```json
+{"level": "warn", "problems": 1, "age_s": 0.4,
+ "items": [{"group": "pi", "key": "temp", "label": "Temperature", "value": "45.1 °C", "level": "ok", "detail": ""}]}
+```
+- `level` per item: `ok` (working), `warn` (degraded or needs a look; amber), `error` (not working; red), `info` (neutral fact). Top-level `level` = worst item (`info` counts as `ok`); `problems` = number of `warn` + `error` items.
+- `value` and `detail` are display strings (units included). `detail` explains a warn/error in one plain sentence and is empty when ok.
+- Groups and keys, in this order (an item whose reading is unavailable is `info` with value "unavailable", never omitted):
+  - `node`: `service` (version · up for), `restarts` (systemd restarts since boot; warn > 0), `clock` (NTP synced; warn when not), `leds_service` (LED service running/age; warn when the state file is older than 60 s while LEDs are supported), `phones` (paired phones count, info).
+  - `tv`: `link` (tv.state; error for pairing_required, certificate_mismatch, permission_denied, launcher_missing; warn for unreachable and unknown; ok for connected and standby), `foreground` (info), `power` (power state or "not reported by this TV", info), `last_error` (info; only when set).
+  - `watcher`: `state` (ok watching; warn user_paused or disabled; error safety_paused or not_ready), `redirects` (ok/failed counts and last latency; warn when failed > 0 in the last hour is unknown so: warn when the last redirect failed), `last_failure` (info; only when set).
+  - `pi`: `temp` (warn ≥ 65 °C, error ≥ 75 °C), `throttle_now` (vcgencmd get_throttled bits 0–3 now: under-voltage, ARM frequency capped, throttled, soft temperature limit; error if under-voltage or throttled now, warn if capped or soft limit), `throttle_boot` (bits 16–19 since boot; warn if any), `voltage` (core volts, info unless under-voltage), `cpu_load` (1/5/15-min load; warn > 1.5, error > 3.0 on this single core), `cpu_use` (% busy since the previous health call; info), `cpu_freq` (current/max MHz and governor; info), `memory` (used/total; warn when available < 60 MB, error < 30 MB), `swap` (used/total; warn when > 50 MB used), `disk` (free/total on /; warn < 300 MB, error < 150 MB), `uptime` (info).
+  - `network`: `wifi_link` (wlan0 operstate + IPv4; error when down), `wifi_signal` (dBm and bars; warn < −75 dBm, error < −85), `wifi_errors` (rx/tx errors+drops since boot; warn > 100), `bluetooth` (present? blocked? — info; the node does not use it).
+- Readings that cost a subprocess (`vcgencmd`, `systemctl show`) are cached for 10 s on the node.
+
 ## Local admin socket (Pi only)
 `$RUNTIME_DIRECTORY/admin.sock` (`/run/vhome-vnode/admin.sock`, 0600, user `vhome`) serves the same routes without a Bearer token, plus:
 - `POST /admin/pairing-code` → `{"code", "node_id", "expires_in_s"}`

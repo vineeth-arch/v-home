@@ -114,3 +114,24 @@ object NodeRules {
     /** "3f9a 1c2e 88b0 7d41 02aa 9c11" — the first 24 hex chars (96 bits) in groups of 4, for comparing with `vnode pair-phone`. */
     fun fingerprintGroups(nodeId: String): String = nodeId.lowercase().take(24).chunked(4).joinToString(" ")
 }
+
+enum class HealthLevel { OK, WARN, ERROR, INFO }
+
+data class HealthItem(val group: String, val key: String, val label: String, val value: String, val level: HealthLevel, val detail: String)
+
+/** GET /v1/health: the node decides every level; the app only renders (red = ERROR, amber = WARN). */
+data class NodeHealth(val level: HealthLevel, val problems: Int, val ageS: Double?, val items: List<HealthItem>) {
+    companion object {
+        private fun lvl(s: String) = runCatching { HealthLevel.valueOf(s.uppercase()) }.getOrDefault(HealthLevel.INFO)
+
+        fun parse(o: JSONObject): NodeHealth {
+            val arr = o.optJSONArray("items")
+            val items = (0 until (arr?.length() ?: 0)).mapNotNull { i ->
+                arr!!.optJSONObject(i)?.let {
+                    HealthItem(it.optString("group"), it.optString("key"), it.optString("label"), it.optString("value"), lvl(it.optString("level")), it.optString("detail"))
+                }
+            }
+            return NodeHealth(lvl(o.optString("level", "info")), o.optInt("problems"), o.optDoubleOrNull("age_s"), items)
+        }
+    }
+}
