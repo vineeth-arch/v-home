@@ -30,9 +30,18 @@ log = logging.getLogger("vhome.cli")
 
 # ---- state directory -------------------------------------------------------------------
 
+def default_state_dir():
+    if os.environ.get("VHOME_COMPANION_DIR"):
+        return Path(os.environ["VHOME_COMPANION_DIR"])
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "vhome-companion"
+    if os.environ.get("STATE_DIRECTORY"):  # set by systemd StateDirectory=
+        return Path(os.environ["STATE_DIRECTORY"].split(":")[0])
+    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "vhome-companion"
+
+
 def state_dir():
-    d = Path(os.environ.get("VHOME_COMPANION_DIR")
-             or Path.home() / "Library" / "Application Support" / "vhome-companion")
+    d = default_state_dir()
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(d, 0o700)
     return d
@@ -44,7 +53,17 @@ def write_private(path, text):
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(text)
+        f.flush()
+        os.fsync(f.fileno())  # a power cut on a microSD must not leave an empty file behind
     os.replace(tmp, path)
+    try:
+        dfd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
 
 
 def read_text(path):
@@ -521,6 +540,9 @@ def cmd_resume(args):
 
 
 def cmd_stop(args):
+    if sys.platform != "darwin":
+        print("On Linux the watcher runs under systemd: sudo systemctl stop vhome-vnode", file=sys.stderr)
+        return 1
     r = subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"],
                        capture_output=True, text=True)
     print("Stopped." if r.returncode == 0 else f"launchctl: {r.stderr.strip() or r.stdout.strip()}")

@@ -240,6 +240,38 @@ class WatcherTests(unittest.TestCase):
         self.assertFalse(launches(w.on_foreground(HOME, 2)))
 
 
+class BaselineTests(unittest.TestCase):
+    """VNode: reconnecting must never take over the screen."""
+
+    def test_reconnect_onto_live_tv_or_home_does_not_launch(self):
+        w = make(baseline_on_connect=True)
+        for first in ("com.webos.app.livetv", HOME):
+            w.on_connected(0)
+            self.assertFalse(launches(w.on_foreground(first, 1)))
+
+    def test_real_home_press_after_baseline_launches(self):
+        w = make(baseline_on_connect=True)
+        w.on_connected(0)
+        w.on_foreground("com.webos.app.livetv", 1)
+        self.assertEqual(len(launches(w.on_foreground(HOME, 2))), 1)
+
+    def test_default_keeps_mac_behaviour(self):
+        w = make()
+        w.on_connected(0)
+        self.assertEqual(len(launches(w.on_foreground(HOME, 1))), 1)
+
+    def test_power_active_clears_failure_window(self):
+        w = make()
+        for t in (0, 20):
+            w.on_foreground(HOME, t)
+            w.on_tick(t + 11)
+            w.on_foreground("x.other", t + 12)
+        w.on_power_active(40)
+        w.on_foreground(HOME, 41)
+        w.on_tick(52)
+        self.assertFalse(w.paused)
+
+
 if __name__ == "__main__":
     unittest.main()
 

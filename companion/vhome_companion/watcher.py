@@ -22,7 +22,7 @@ def _log(text, level="info"):
 
 
 class Watcher:
-    def __init__(self, vhome_id, home_ids, double_home_escape=False):
+    def __init__(self, vhome_id, home_ids, double_home_escape=False, baseline_on_connect=False):
         home_ids = tuple(i for i in (home_ids or ()) if isinstance(i, str) and i.strip())
         if not isinstance(vhome_id, str) or not vhome_id.strip():
             raise ConfigError("V/HOME app id is not set")
@@ -33,6 +33,9 @@ class Watcher:
             raise ConfigError("the V/HOME app id must not be one of the LG Home ids")
         self.vhome_id, self.home_ids = vhome_id, home_ids
         self.double_home_escape = bool(double_home_escape)
+        # VNode: the first foreground after (re)connect is only recorded, so a reconnect never takes over the screen.
+        self.baseline_on_connect = bool(baseline_on_connect)
+        self._baseline = False
         self.paused = False
         self.last_app = None
         self.pending = None
@@ -50,7 +53,13 @@ class Watcher:
             self.pending = None
             out.append(_log("connection restarted while a launch was pending; not counted", "warning"))
         self.last_app = None
+        self._baseline = self.baseline_on_connect
         return out
+
+    def on_power_active(self, now):
+        """TV reported power Active: failures while it was booting must not count towards the breaker."""
+        self._failures.clear()
+        return [_log("TV power active: failure window cleared", "debug")]
 
     def on_foreground(self, app_id, now):
         out = self._expire(now)
@@ -60,6 +69,9 @@ class Watcher:
         if app == self.last_app:
             return out  # duplicate notification
         self.last_app = app
+        if self._baseline:
+            self._baseline = False
+            return out + [_log(f"foreground after connect: {app} (baseline, no action)")]
         out.append(_log(f"foreground: {app}"))
         if self.pending and app == self.vhome_id:
             self.pending["seen_at"] = now
