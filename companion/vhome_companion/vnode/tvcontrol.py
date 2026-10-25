@@ -22,6 +22,8 @@ from .store import Store
 log = logging.getLogger("vhome.vnode.tv")
 
 POWER_URI = "ssap://com.webos.service.tvpower/power/getPowerState"
+# The node also reads power state (standby detection); the TV granted this to the Android app already.
+PERMISSIONS = ssap.PERMISSIONS + ["READ_POWER_STATE"]
 LIST_URI = "ssap://com.webos.applicationManager/listLaunchPoints"
 CLOSE_URI = "ssap://system.launcher/close"
 STANDBY = frozenset({"Active Standby", "Suspend", "Power Off"})
@@ -315,9 +317,12 @@ class TvController:
 
     async def _link(self):
         c = self.cfg
-        client = ssap.Client(c["host"], c["key"], c["pin"], connect=self._connect)
+        client = ssap.Client(c["host"], c["key"], c["pin"], connect=self._connect, permissions=PERMISSIONS)
         try:
-            await client.open()
+            key = await client.open()
+            if key and key != c["key"]:   # the TV re-issued the key (e.g. after granting a new permission)
+                self.store.save_tv_pairing(c["host"], key, c["pin"])
+                self.cfg = self.store.tv_config()
             self._client = client
             self._up_since = self.clock()
             self.last_error = None
@@ -720,7 +725,7 @@ class TvController:
         return contracts.outcome("accepted")
 
     async def _pair_job(self, host, repin):
-        c = ssap.Client(host, None, None, trust_new=True, connect=self._connect)
+        c = ssap.Client(host, None, None, trust_new=True, connect=self._connect, permissions=PERMISSIONS)
         try:
             key = await c.open(pair_timeout=60)
             old_pin = self.store.paired()[1]

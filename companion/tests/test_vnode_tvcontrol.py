@@ -53,8 +53,10 @@ class FakeTv:
         tv = self
 
         class FakeClient:
-            def __init__(self, host, client_key=None, pin=None, trust_new=False, connect=None, request_timeout=10.0):
+            def __init__(self, host, client_key=None, pin=None, trust_new=False, connect=None, request_timeout=10.0,
+                         permissions=None):
                 self.host, self.key, self.pin, self.trust_new = host, client_key, pin, trust_new
+                tv.permissions = permissions
                 self.cert_sha256 = None
                 self.subs = {}
 
@@ -770,6 +772,12 @@ class ReviewFixTests(Base):
         self.assertTrue(c2.status()["watcher"]["paused"])
         synced["v"] = True
         await until(lambda: not c2.status()["watcher"]["paused"])
+
+    async def test_node_asks_for_power_state_and_keeps_a_reissued_key(self):
+        self.tv.pair_key = "unused"
+        c = await self.up()
+        self.assertIn("READ_POWER_STATE", self.tv.permissions)
+        self.assertEqual(Store(self.d).paired()[0], "key")
 
     def test_diagnostics_does_not_call_timedatectl(self):
         calls = []

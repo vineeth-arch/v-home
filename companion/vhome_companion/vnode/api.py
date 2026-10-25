@@ -396,7 +396,7 @@ def _version():
     try:
         extra = (Path(__file__).resolve().parent.parent.parent / "VERSION").read_text().strip()
         if extra:
-            v += "+" + extra
+            v = extra   # the bundle's VERSION already starts with __version__ (e.g. 0.1.0-69a4af2)
     except OSError:
         pass
     return v

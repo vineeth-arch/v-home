@@ -86,8 +86,8 @@ def redact(text):
     return re.sub(r'("client-key"\s*:\s*")[^"]*', r"\1<redacted>", str(text))
 
 
-def manifest():
-    return {"manifestVersion": 1, "appVersion": "1.1", "permissions": list(PERMISSIONS)}
+def manifest(permissions=None):
+    return {"manifestVersion": 1, "appVersion": "1.1", "permissions": list(permissions or PERMISSIONS)}
 
 
 async def default_connect(host, ctx):
@@ -110,10 +110,11 @@ class Subscription:
 
 class Client:
     def __init__(self, host, client_key=None, pin=None, trust_new=False,
-                 connect=default_connect, request_timeout=10.0):
+                 connect=default_connect, request_timeout=10.0, permissions=None):
         self.host, self.client_key, self.pin = host, client_key, pin
         self.trust_new, self._connect = trust_new, connect
         self.request_timeout = request_timeout
+        self.permissions = permissions
         self.cert_sha256 = None
         self._ws = None
         self._reader = None
@@ -159,7 +160,7 @@ class Client:
                 "refusing to connect. If the TV was reset or updated, run `pair --repin`")
 
     async def _register(self, ws, pair_timeout, on_prompt):
-        payload = {"forcePairing": False, "pairingType": "PROMPT", "manifest": manifest()}
+        payload = {"forcePairing": False, "pairingType": "PROMPT", "manifest": manifest(self.permissions)}
         if self.client_key:
             payload["client-key"] = self.client_key
         await self._send_raw({"type": "register", "id": "register_0", "payload": payload})
