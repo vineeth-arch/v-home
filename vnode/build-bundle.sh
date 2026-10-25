@@ -30,5 +30,5 @@ find "$stage" \( -name .DS_Store -o -name '._*' -o -name '*.pyc' \) -delete
 
 mkdir -p dist-vnode
 out="$ROOT/dist-vnode/vhome-vnode-$version.tar.gz"
-COPYFILE_DISABLE=1 tar -czf "$out" -C "$stage" .
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$out" -C "$stage" .  # no macOS xattr headers for GNU tar
 echo "$out"

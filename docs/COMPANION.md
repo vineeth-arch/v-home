@@ -2,6 +2,8 @@
 
 Status: written and unit-tested against fakes (including a local TLS fake TV). Nothing here has been run against the real TV. Every behaviour about the TV is UNVERIFIED until the hardware checklists at the end are run. The TV model is LG 43NU885BPLA, firmware 43.04.26.
 
+> With a VNode (the Raspberry Pi in [VNODE.md](VNODE.md)), keep this Mac watcher off during normal use. Two watchers would both open V/HOME on one Home press. The Mac stays where app builds and `scripts/refresh-tv.sh` run, and you can still use `pause`, `diag` and `sync-catalog` here. `./vnode/deploy.sh --stop-mac-watcher install` stops the LaunchAgent for you; `companion/install.sh update` loads it again.
+
 ## What it does and does not do
 
 LG's Home button cannot be overridden without root, and we never root the TV. So a small Python program on the Mac watches which app is in front on the TV, over LG's remote-control websocket (the one LG's phone app uses). When LG Home comes to the front it asks the TV to launch V/HOME. It also writes the TV's app and input list to `tv-catalog/` so the launcher can show real apps.

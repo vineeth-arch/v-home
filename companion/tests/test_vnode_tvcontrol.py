@@ -356,6 +356,17 @@ class RecoveryTests(Base):
         self.assertEqual(self.tv.closes(), [])
         self.assertEqual(len(self.tv.launches()), 1)
 
+    async def test_navigation_during_close_wait_blocks_the_relaunch(self):
+        # Review finding: the owner switches to Live TV while V/HOME is being closed.
+        c = await self.up()
+        await self.live(c)
+        c.RECOVERY_WAIT_S = 0.2
+        await self.home_launch(c)
+        await until(lambda: self.tv.closes())
+        self.tv.event(LIVE)
+        await settle(0.4)
+        self.assertEqual(len(self.tv.launches()), 1)    # no relaunch over Live TV
+
     async def test_fresh_read_not_home_means_no_recovery(self):
         c = await self.up()
         await self.live(c)
@@ -730,6 +741,41 @@ class DiscoveryAndDiagnosticsTests(Base):
         self.assertLess(loop.time() - t0, 1.0)
         self.assertTrue(c._task.done())
         self.assertIsNone(c._client)
+
+
+
+class ReviewFixTests(Base):
+    async def test_heartbeat_keeps_an_idle_tv_fresh(self):
+        c = await self.up()
+        c.HEARTBEAT_S = 0.02
+        await self.live(c)
+        # restart the session so the shorter heartbeat applies
+        self.tv.drop()
+        await until(lambda: c._client is not None and c.tv_state == contracts.TvState.CONNECTED)
+        n = len([u for u, _ in self.tv.requests if u == tvcontrol.POWER_URI])
+        self.t += 30.0                       # 30 s with no TV events
+        await until(lambda: len([u for u, _ in self.tv.requests if u == tvcontrol.POWER_URI]) > n)
+        self.assertLess(c.status()["tv"]["age_s"], 1.0)
+
+    async def test_deferred_timed_pause_resumes_after_ntp_sync(self):
+        synced = {"v": False}
+        c = self.make(ntp_synced=lambda: synced["v"])
+        c.NTP_POLL_S = 0.02
+        await c.pause(1)
+        c2 = self.make(paired=False, ntp_synced=lambda: synced["v"])
+        c2.NTP_POLL_S = 0.02
+        c2.wall = lambda: 1_700_000_000.0 + 120     # pause already over once the clock is trusted
+        await c2.start()
+        await settle(0.1)
+        self.assertTrue(c2.status()["watcher"]["paused"])
+        synced["v"] = True
+        await until(lambda: not c2.status()["watcher"]["paused"])
+
+    def test_diagnostics_does_not_call_timedatectl(self):
+        calls = []
+        c = self.make(ntp_synced=lambda: calls.append(1) or True)
+        c.diagnostics()
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

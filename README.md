@@ -51,6 +51,7 @@ Stack: React 19, Vite, TypeScript, plain CSS (the brief overrides the global Nex
 ## Docs
 
 - [Help and all features](docs/HELP.md)
+- [VNode: always-on Raspberry Pi](docs/VNODE.md): install, pair, LEDs, backup, recovery, hardware checklist
 - [Mac companion](docs/COMPANION.md): setup, Home-button return, pause, uninstall, test checklists
 - [Capabilities](docs/CAPABILITIES.md): what is verified on the TV and what is not
 - [Opening V/HOME by default](docs/OPENING.md) · [Recovery](docs/RECOVERY.md) · [Developer Mode](docs/DEV-MODE.md) · [Limitations](docs/LIMITATIONS.md)

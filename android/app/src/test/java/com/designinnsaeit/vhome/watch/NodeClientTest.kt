@@ -168,6 +168,22 @@ class NodeClientTest {
         assertNotNull(NodeClient.buildUrl("192.168.29.7", 8443, "/v1/info"))
     }
 
+    @Test fun malformedHostIsInvalidNotACrash() {
+        val c = NodeClient("vnode local", null, true, SocketFactory.getDefault(), null)
+        expectProblem(NodeProblem.INVALID) { c.info() }
+        expectProblem(NodeProblem.INVALID) { NodeClient("vnode.local:8443", null, true, SocketFactory.getDefault(), null).info() }
+    }
+
+    @Test fun normalizeHostHandlesCommonPastes() {
+        assertEquals("vnode.local", NodeClient.normalizeHost("  vnode.local  "))
+        assertEquals("vnode.local", NodeClient.normalizeHost("vnode.local:8443"))
+        assertEquals("192.168.1.5", NodeClient.normalizeHost("http://192.168.1.5"))
+        assertEquals("192.168.1.5", NodeClient.normalizeHost("HTTPS://192.168.1.5:8443/"))
+        assertEquals("[fe80::1]", NodeClient.normalizeHost("[fe80::1]:8443"))
+        assertEquals("fe80::8443", NodeClient.normalizeHost("fe80::8443"))
+        assertEquals("vnode local", NodeClient.normalizeHost("vnode local"))
+    }
+
     @Test fun phonesList() {
         server.enqueue(json("""{"phones":[{"id":"p_1","name":"Pixel","created":"2026-10-01T00:00:00Z","this":true},{"id":"p_2","name":"Old","created":"x"}]}"""))
         val phones = runBlocking { client(pin).phones() }

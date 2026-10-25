@@ -116,6 +116,9 @@ install_packages() {
     echo "all packages present"
   fi
   python3 -c "import aiohttp, websockets; print('aiohttp', aiohttp.__version__, 'websockets', websockets.__version__)"
+  # ssap.py needs websockets >= 13 (asyncio client); Debian 12 ships 10.4 and would fail only at TV connect time.
+  python3 -c "from websockets.asyncio.client import connect" 2>/dev/null \
+    || die "python3-websockets is too old (need >= 13; Raspberry Pi OS 13 trixie ships 15)"
   if has_leds; then
     python3 -c "import gpiod; print('gpiod', getattr(gpiod, '__version__', '?'))" || die "python3 gpiod missing"
   fi
@@ -159,15 +162,17 @@ install_release() {
   mkdir -p "$OPT/releases"
   chown root:root "$OPT" "$OPT/releases"
   chmod 0755 "$OPT" "$OPT/releases"
+  prev="$(readlink -f "$OPT/current" 2>/dev/null || true)"
+  # Same version again (e.g. a re-run): never delete the directory the running service uses.
+  if [ "$prev" = "$dest" ]; then dest="$dest-r$(date +%s)"; fi
   tmp="$dest.new"
   rm -rf "${tmp:?}"
   mkdir "$tmp"
-  cp -R "$BUNDLE/vhome_companion" "$BUNDLE/tests" "$BUNDLE/VERSION" "$tmp/"
+  cp -R "$BUNDLE/vhome_companion" "$BUNDLE/tests" "$BUNDLE/vnode" "$BUNDLE/VERSION" "$tmp/"  # vnode/: install-pi.sh and heat-test.sh stay on the Pi
   find "$tmp" -name __pycache__ -prune -exec rm -rf {} +
   chown -R root:root "$tmp"
   find "$tmp" -type d -exec chmod 0755 {} +
   find "$tmp" -type f -exec chmod 0644 {} +
-  prev="$(readlink -f "$OPT/current" 2>/dev/null || true)"
   rm -rf "${dest:?}"
   mv "$tmp" "$dest"
   if [ -n "$prev" ] && [ "$prev" != "$dest" ]; then
@@ -396,7 +401,10 @@ cmd_restore() {
   log "Restore"
   local u
   for u in vhome-leds vhome-vnode; do systemctl stop "$u" 2>/dev/null || true; done
-  if [ -d "$STATE" ]; then cmd_backup; fi
+  if [ -d "$STATE" ]; then
+    cmd_backup
+    rm -rf "${STATE:?}"   # replace, don't merge: a stale tv-revoked or phones.json must not survive
+  fi
   mkdir -p "$STATE"
   tar xzf "$file" -C "$(dirname "$STATE")" --no-same-owner
   chown -R "$SVC_USER:$SVC_USER" "$STATE"

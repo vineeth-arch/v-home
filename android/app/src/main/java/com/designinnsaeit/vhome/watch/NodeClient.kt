@@ -111,10 +111,25 @@ class NodeClient(
     }
 
     companion object {
-        /** HttpUrl.Builder takes IPv6 literals and adds the brackets. */
-        fun buildUrl(host: String, port: Int, path: String): HttpUrl = HttpUrl.Builder()
-            .scheme("https").host(host.trim().removePrefix("[").removeSuffix("]")).port(port)
-            .addPathSegments(path.trimStart('/')).build()
+        /** HttpUrl.Builder takes IPv6 literals and adds the brackets. A host it rejects is an INVALID answer, not a crash. */
+        fun buildUrl(host: String, port: Int, path: String): HttpUrl = try {
+            HttpUrl.Builder()
+                .scheme("https").host(host.trim().removePrefix("[").removeSuffix("]")).port(port)
+                .addPathSegments(path.trimStart('/')).build()
+        } catch (e: IllegalArgumentException) {
+            throw NodeException(NodeProblem.INVALID, "That address isn't a host name or IP")
+        }
+
+        /** Makes common pastes work: trims, drops a leading http(s):// and a trailing "/" or ":8443". */
+        fun normalizeHost(raw: String): String {
+            var h = raw.trim()
+            h = h.replace(Regex("^https?://", RegexOption.IGNORE_CASE), "").trimEnd('/')
+            if (h.endsWith(":$NODE_PORT")) {
+                val rest = h.removeSuffix(":$NODE_PORT")
+                if (!rest.contains(':') || rest.endsWith("]")) h = rest
+            }
+            return h
+        }
 
         internal fun httpError(code: Int, body: String): NodeException {
             val o = runCatching { JSONObject(body) }.getOrNull()

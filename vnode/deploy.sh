@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Mac: build the bundle, copy it to the Pi and run install-pi.sh there. You type the sudo password in the ssh session.
-# usage: deploy.sh [--host vnode.local] [--user vnode] [--stop-mac-watcher] [install|update|rollback|status|diag|backup|uninstall] [extra args]
+# usage: deploy.sh [--host vnode.local] [--user vnode] [--stop-mac-watcher] [install|update|rollback|status|diag|backup|restore FILE|uninstall] [extra args]
+#   backup copies the archive to ./vnode-backups/ on the Mac; restore FILE sends a Mac-side archive to the Pi.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +21,7 @@ done
 CMD="${1:-install}"
 if [ $# -gt 0 ]; then shift; fi
 case "$CMD" in
-  install|update|rollback|status|diag|backup|uninstall) ;;
+  install|update|rollback|status|diag|backup|restore|uninstall) ;;
   *) echo "unknown command: $CMD" >&2; exit 2 ;;
 esac
 
@@ -43,8 +44,29 @@ echo "Bundle: $tarball"
 
 scp "$tarball" "$USER_@$HOST:/tmp/$name"
 
+stamp="$(date +%Y%m%d-%H%M%S)"
+if [ "$CMD" = restore ]; then
+  local_file="${1:?restore needs the backup file on this Mac}"; shift
+  scp "$local_file" "$USER_@$HOST:/tmp/vnode-restore-$stamp.tar.gz"
+  set -- "/tmp/vnode-restore-$stamp.tar.gz" "$@"
+elif [ "$CMD" = backup ]; then
+  set -- "/tmp/vnode-backup-$stamp.tar.gz"
+fi
+
 extra=""
 if [ $# -gt 0 ]; then extra="$(printf '%q ' "$@")"; fi
 qname="$(printf '%q' "$name")"
 # shellcheck disable=SC2029  # expansion on the Mac side is intended
 ssh -t "$USER_@$HOST" "cd /tmp && rm -rf vhome-vnode-bundle && mkdir vhome-vnode-bundle && tar xzf $qname -C vhome-vnode-bundle && sudo bash vhome-vnode-bundle/vnode/install-pi.sh $CMD $extra"
+
+if [ "$CMD" = backup ]; then
+  mkdir -p "$HERE/../vnode-backups"; chmod 700 "$HERE/../vnode-backups"
+  scp "$USER_@$HOST:/tmp/vnode-backup-$stamp.tar.gz" "$HERE/../vnode-backups/"
+  chmod 600 "$HERE/../vnode-backups/vnode-backup-$stamp.tar.gz"
+  # shellcheck disable=SC2029  # stamp expands on the Mac on purpose
+  ssh "$USER_@$HOST" "rm -f /tmp/vnode-backup-$stamp.tar.gz"
+  echo "Backup saved on this Mac: vnode-backups/vnode-backup-$stamp.tar.gz (contains credentials; keep it private)"
+elif [ "$CMD" = restore ]; then
+  # shellcheck disable=SC2029  # stamp expands on the Mac on purpose
+  ssh "$USER_@$HOST" "rm -f /tmp/vnode-restore-$stamp.tar.gz"
+fi

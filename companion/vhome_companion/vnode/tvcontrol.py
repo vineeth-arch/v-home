@@ -80,6 +80,8 @@ class TvController:
     MISMATCH_RETRY_S = 300.0
     WAKE_GAPS_S = (0.0, 3.0, 7.0)    # re-read the foreground at 0, 3 and 10 s after the TV woke
     HEALTHY_SESSION_S = 30.0
+    HEARTBEAT_S = 10.0              # proof the link is alive, so an idle TV doesn't read as stale
+    NTP_POLL_S = 30.0
 
     def __init__(self, state_dir, *, connect=ssap.default_connect, clock=time.monotonic,
                  wall=time.time, ssdp_search=ssdp.search, ntp_synced=system_ntp_synced):
@@ -105,6 +107,8 @@ class TvController:
         self._last_recovery = None
         self._wake = asyncio.Event()
         self._task = self._conn_task = self._launch_task = self._pair_task = self._timer = None
+        self._ntp_ok = None             # last NTP check; diagnostics must not block the loop
+        self._ntp_task = None
         self._tasks = set()             # per-session helpers (pumps, wake check)
         self._explicit = None           # asyncio.Event while an explicit launch() runs
         self._lock = None
@@ -125,15 +129,17 @@ class TvController:
 
     async def start(self):
         self._restore_timed_pause()
+        if self._ntp_task is None:
+            self._ntp_task = asyncio.create_task(self._wait_for_ntp())
         self._task = asyncio.create_task(self._run())
 
     async def close(self):
         launch = self._launch_task
         self._cancel_launch()
-        for t in (self._task, self._pair_task, self._timer):
+        for t in (self._task, self._pair_task, self._timer, self._ntp_task):
             if t:
                 t.cancel()
-        pending = [t for t in (self._task, self._pair_task, self._timer, launch, *self._tasks) if t]
+        pending = [t for t in (self._task, self._pair_task, self._timer, self._ntp_task, launch, *self._tasks) if t]
         for t in self._tasks:
             t.cancel()
         if pending:
@@ -370,6 +376,7 @@ class TvController:
         except ssap.SsapError as e:
             log.info("power state unavailable (%s); watching anyway", e)
         await self._check_launcher(client)
+        self._spawn(self._heartbeat(client))
         while True:
             dl = w.next_deadline()
             try:
@@ -391,6 +398,19 @@ class TvController:
             else:
                 self._on_power(item)
             self._settle()
+
+    async def _heartbeat(self, client):
+        """One cheap request every HEARTBEAT_S; a success refreshes age_s. Failures are left to the
+        subscriptions, which end the session when the link is really gone."""
+        uri = POWER_URI
+        while True:
+            await asyncio.sleep(self.HEARTBEAT_S)
+            try:
+                await self._req(client, uri, timeout=5)
+            except ssap.RequestFailed:
+                uri = cli.FG_URI          # power service not readable on this firmware
+            except (ssap.SsapError, OSError):
+                pass
 
     def _settle(self):
         """Drop launch/recovery work whose token the watcher has already resolved."""
@@ -519,6 +539,16 @@ class TvController:
         self._apply(w.on_launch_result(token, True, self.clock()))
         await self._recover_if_stuck(client, token, app_id, seen)
 
+    async def _still_on_home(self, client, token, seen):
+        """The owner may have moved on while we waited: never relaunch over another app."""
+        if not self._live(token) or self._nonhome_seen != seen:
+            return False
+        try:
+            front = cli.extract_app_id(await self._req(client, cli.FG_URI, timeout=3))
+        except (ssap.SsapError, OSError):
+            return False
+        return front in self.watcher.home_ids and self._live(token) and self._nonhome_seen == seen
+
     async def _recover_if_stuck(self, client, token, app_id, seen):
         """V/HOME stuck in the background: launch says OK, nothing appears. Close it and launch once."""
         await asyncio.sleep(self.STUCK_CHECK_S)
@@ -532,6 +562,8 @@ class TvController:
             return
         if self._last_recovery is not None and self.clock() - self._last_recovery < self.RECOVERY_GAP_S:
             return
+        if self._nonhome_seen != seen:
+            return
         self._last_recovery = self.clock()
         log.info("V/HOME accepted the launch but did not appear; restarting it")
         try:
@@ -539,7 +571,7 @@ class TvController:
         except (ssap.SsapError, OSError):
             pass
         await asyncio.sleep(self.RECOVERY_WAIT_S)
-        if not self._live(token):
+        if not await self._still_on_home(client, token, seen):
             return
         try:
             await self._req(client, cli.LAUNCH_URI, {"id": app_id}, timeout=self.LAUNCH_REQUEST_S)
@@ -622,14 +654,26 @@ class TvController:
         log.info("timed pause ended")
         await self.resume()
 
+    async def _wait_for_ntp(self, deferred_pause=False):
+        """Background: keep the NTP state fresh for diagnostics; resume a deferred timed pause once synced."""
+        while True:
+            self._ntp_ok = bool(await asyncio.to_thread(self.ntp_synced))
+            if self._ntp_ok:
+                break
+            await asyncio.sleep(self.NTP_POLL_S)
+        if deferred_pause and self.control["paused"] and self.control["paused_until"]:
+            self._restore_timed_pause()
+
     def _restore_timed_pause(self):
         """After a restart the wall clock may be wrong (no RTC). Only trust it when NTP is synced;
         otherwise stay paused until the owner resumes, which is the safe side."""
         until = self.control["paused_until"]
         if not (self.control["paused"] and until):
             return
-        if not self.ntp_synced():
-            log.warning("timed pause kept: clock not NTP-synced, resume it manually")
+        self._ntp_ok = bool(self.ntp_synced())
+        if not self._ntp_ok:
+            log.warning("timed pause kept until the clock is NTP-synced")
+            self._ntp_task = asyncio.create_task(self._wait_for_ntp(deferred_pause=True))
             return
         left = datetime.fromisoformat(until).timestamp() - self.wall()
         if left <= 0:
@@ -711,7 +755,7 @@ class TvController:
                        "watcher_ready": w is not None, "link_up": self._client is not None,
                        "launcher_missing": self._launcher_missing,
                        "power_on_launch": self.control["power_on_launch"],
-                       "ntp_synced": bool(self.ntp_synced()), "last_error": self.last_error},
+                       "ntp_synced": self._ntp_ok, "last_error": self.last_error},
             "log": list(self._ring.lines),
             "counters": dict(w.stats) if w else {},
         }

@@ -74,11 +74,21 @@ The phone is the watcher. When it is away from home Wi-Fi, switched off, or the 
 
 ## Only one watcher at a time
 
-Two watchers would both launch V/HOME on one Home press. Stop the Mac agent before using the phone:
+Two watchers would both launch V/HOME on one Home press. That counts the Mac agent, this phone, and the Raspberry Pi node. Stop the Mac agent before using the phone:
 
 ```
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.designinnsaeit.vhome-companion.plist
 ```
+
+If you use a VNode, the node is the watcher and this phone's own watcher stays off. The node's lock only stops a second program on the Pi. It cannot see the Mac or the phone. Switching the phone back to its own watcher asks the node to stop first (see below).
+
+## VNode mode (0.9.0)
+
+Version 0.9.0 adds a second mode. In VNode mode the phone is a remote for the Raspberry Pi node ([VNODE.md](VNODE.md)). It shows status, pauses and resumes, opens V/HOME on the TV, pairs the TV through the node, and controls the Pi.
+
+What changes: there is no foreground service and no "V/HOME Watcher" notification, the boot receiver and the Wi-Fi job do nothing, and the battery exemption and Samsung sleeping-app settings above are not needed. Status is fetched every 5 seconds only while the screen is visible. Data older than 20 seconds is shown as "Last seen HH:MM", never as "Watching".
+
+Pairing a node switches the phone to VNode mode and turns its own watcher off. "Use this phone instead" switches back, but only after the node confirms it stopped watching. If the node cannot be reached you must confirm it is unplugged or disconnected. "Forget this node" never turns the phone's own watcher back on by itself. Standalone remains the default for a phone that was never paired with a node.
 
 ## Behaviour worth knowing
 

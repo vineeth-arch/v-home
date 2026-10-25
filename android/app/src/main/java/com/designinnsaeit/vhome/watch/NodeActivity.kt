@@ -46,6 +46,7 @@ class NodeActivity : Activity() {
     private var pollJob: Job? = null
     private var screen = Screen.SETUP
     private var busy = false
+    private var resumed = false
     private var enableOnStart = false
 
     // Pairing in progress (never saved until the owner confirmed the fingerprint and the code worked).
@@ -99,7 +100,7 @@ class NodeActivity : Activity() {
             command(v(R.id.actionResult)) { it.command("/v1/pause", JSONObject().put("minutes", 60)) }
         }
         v<Button>(R.id.resumeButton).setOnClickListener { command(v(R.id.actionResult)) { it.command("/v1/resume") } }
-        v<Button>(R.id.turnOnButton).setOnClickListener { enableNode() }
+        v<Button>(R.id.turnOnButton).setOnClickListener { enableNode {} }
 
         v<Button>(R.id.tvPairToggle).setOnClickListener { toggleTvPair() }
         v<Button>(R.id.tvPairButton).setOnClickListener { pairTv() }
@@ -140,19 +141,15 @@ class NodeActivity : Activity() {
             R.id.rebootButton, R.id.shutdownButton, R.id.diagButton, R.id.usePhoneButton, R.id.forgetButton,
         ).map { v<View>(it) } + brightnessButtons
 
-        // Coming back from standalone mode: the node takes over, this phone's watcher stays off.
+        // Coming back from standalone mode: the phone keeps watching until the node confirms it does.
         enableOnStart = intent.getBooleanExtra(EXTRA_ENABLE, false) && store.isPaired()
-        if (enableOnStart) {
-            Prefs.setMode(this, ControllerMode.VNODE)
-            stopWatcherService()
-            notice(getString(R.string.node_enable_sent))
-        }
         show(if (store.isPaired()) Screen.STATUS else Screen.SETUP)
         if (screen == Screen.SETUP && Prefs.mode(this) == ControllerMode.VNODE) notice(getString(R.string.node_phone_off))
     }
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         when (screen) {
             Screen.SETUP -> startDiscovery()
             Screen.STATUS -> startPolling()
@@ -160,11 +157,15 @@ class NodeActivity : Activity() {
         }
         if (enableOnStart && screen == Screen.STATUS) {
             enableOnStart = false
-            enableNode()
+            enableNode {
+                Prefs.setMode(this, ControllerMode.VNODE)
+                stopWatcherService()
+            }
         }
     }
 
     override fun onPause() {
+        resumed = false
         pollJob?.cancel(); pollJob = null
         discovery.stop()
         notice(null)
@@ -238,7 +239,7 @@ class NodeActivity : Activity() {
 
     /** First contact trusts the certificate once, only to learn its hash; the owner then compares it by eye. */
     private fun connect(rawHost: String) {
-        val host = rawHost.trim()
+        val host = NodeClient.normalizeHost(rawHost)
         if (host.isEmpty() || busy) return
         setBusy(true)
         result(v(R.id.setupResult), null, getString(R.string.node_connecting))
@@ -273,6 +274,7 @@ class NodeActivity : Activity() {
         setBusy(true)
         result(v(R.id.codeResult), null, getString(R.string.node_pairing))
         scope.launch {
+            var paired = false
             try {
                 // From here on the connection is pinned to what the owner confirmed.
                 val (phoneId, token) = NodeClient(host, id, false, socketFactory(), null, dns = dns())
@@ -285,18 +287,21 @@ class NodeActivity : Activity() {
                 status = null; device = null; problem = null
                 notice(getString(R.string.node_paired_ok))
                 show(Screen.STATUS)
+                paired = true
             } catch (e: NodeException) {
                 result(v(R.id.codeResult), false, NodeUi.problemMessage(e.problem, vpnActive(), pairing = true))
             } finally {
                 setBusy(false)
             }
+            // The owner chose the node; a node that had been handed back to the phone must watch again.
+            if (paired) enableNode {}
         }
     }
 
     // ---- Status polling --------------------------------------------------------------------------
 
     private fun startPolling() {
-        if (pollJob?.isActive == true) return
+        if (!resumed || pollJob?.isActive == true) return
         pollJob = scope.launch {
             var tick = 0
             while (isActive) {
@@ -469,7 +474,7 @@ class NodeActivity : Activity() {
 
     /** Sends one command, shows the outcome, then refreshes the status. Never retries; buttons stay off meanwhile. */
     private fun command(
-        out: TextView, text: (CommandResult) -> String = NodeUi::commandText,
+        out: TextView, text: (CommandResult) -> String = NodeUi::commandText, onConfirmed: () -> Unit = {},
         call: suspend (NodeClient) -> CommandResult,
     ) {
         if (busy) return
@@ -478,6 +483,7 @@ class NodeActivity : Activity() {
         scope.launch {
             try {
                 val r = call(client())
+                if (r.outcome == Outcome.CONFIRMED) onConfirmed()
                 result(out, when (r.outcome) { Outcome.CONFIRMED -> true; Outcome.FAILED -> false; else -> null }, text(r))
             } catch (e: NodeException) {
                 result(out, if (e.problem == NodeProblem.NO_ANSWER) null else false, NodeUi.commandFailure(e, vpnActive()))
@@ -487,7 +493,8 @@ class NodeActivity : Activity() {
         }
     }
 
-    private fun enableNode() = command(v(R.id.actionResult)) { it.command("/v1/watcher", JSONObject().put("enabled", true)) }
+    private fun enableNode(onConfirmed: () -> Unit) =
+        command(v(R.id.actionResult), onConfirmed = onConfirmed) { it.command("/v1/watcher", JSONObject().put("enabled", true)) }
 
     private fun applyLeds() {
         command(v(R.id.piResult)) {

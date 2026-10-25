@@ -186,6 +186,10 @@ class Client:
                     if kind == "response" and on_prompt:
                         on_prompt()
         except TimeoutError:
+            if self.client_key:
+                # A stored key that gets no answer is a slow or waking TV, not a revoked key:
+                # back off and retry instead of stopping for good.
+                raise ConnectionLost(f"no registration answer within {wait:.0f} s (TV busy or waking)") from None
             raise NotPaired("timed out waiting for the TV to accept the pairing prompt") from None
         except SsapError:
             raise

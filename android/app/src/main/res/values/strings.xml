@@ -141,7 +141,6 @@
     <string name="node_paired_ok">Paired. The node watches your TV now; this phone\'s own watcher is off.</string>
     <string name="node_phone_off">This phone\'s own watcher is off. Pair a node, or tap Use this phone instead.</string>
     <string name="node_forgot">Node forgotten. This phone\'s own watcher stays off until you choose: pair a node, or use this phone instead.</string>
-    <string name="node_enable_sent">This phone\'s own watcher is off. Asking the node to take over…</string>
     <string name="node_launch">Open V/HOME on TV</string>
     <string name="node_resume">Resume</string>
     <string name="node_turn_on">Let the node watch</string>

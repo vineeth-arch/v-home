@@ -80,3 +80,58 @@ First session with the TV on. Observed by the owner on screen, plus the companio
 | 15 min preset | added |
 | TV actually switches off at the set time | NOT CHECKED |
 | Status stays correct if the timer is changed in the V/TV Sleep app or from an iPhone | NOT SUPPORTED: V/HOME only knows the last result V/TV Sleep sent back |
+
+## VNode (2026-10-25)
+
+VNode is the Raspberry Pi Zero W that watches the TV so V/HOME works with the Mac asleep and the phone away. Guide: [VNODE.md](VNODE.md). API: [contracts/vnode-api-v1.md](contracts/vnode-api-v1.md).
+
+### Automated evidence (desktop and CI)
+
+These ran on the Mac, not on the Pi or the TV. They prove the logic, not the hardware.
+
+| Check | Result | What it proves |
+|---|---|---|
+| Python tests, 217 tests, Python 3.13 with aiohttp 3.11.16 and websockets 15.0.1 (the versions Debian ships for the Pi) | pass | TV controller state machine and breakers against a fake TV; API auth, nonces, pairing-code limits, device controls limited to a fixed list of commands; LED signal bars and thermal guard; installer and archive-safety rules |
+| Android JVM tests, 117 tests | pass | NodeClient against a TLS mock server (pin match and mismatch, 401, 409, 410, 426); stale-data label; the rule for switching back to standalone; the gating that keeps the phone's own watcher off in VNode mode; user-facing messages |
+| `npm run check` | pass | The repository's check script (typecheck, tests, web build, TV build) passes; the VNode work does not touch the TV app |
+| End-to-end TLS smoke test of `serve` on the Mac | pass | Real HTTPS on a self-signed certificate: pairing with a one-time code; 401 for a bad or missing token; 409 for a reused nonce; 410 for an expired nonce; 413 for a body over 4096 bytes; 422 for unknown fields and a missing reboot confirmation; 426 for a wrong API version; a phone revoking itself and then getting 401 |
+
+### Hardware evidence (Pi Zero W)
+
+Only what was measured before the install, 2026-10-25 07:06 UTC, with no V/HOME software on the Pi and the LEDs untouched.
+
+| Item | Result |
+|---|---|
+| Board and OS | Pi Zero W Rev 1.1, armv6l, Raspbian 13.6 trixie, kernel 6.18.50+rpt-rpi-v6, Python 3.13.5, systemd 257.9 |
+| Temperature | 42.7 to 43.8 C over 60 s (6 samples); load 0.01 to 0.08 |
+| Power | `vcgencmd` throttled 0x0; hwmon `rpi_volt` under-voltage alarm 0. The kernel has no `get_throttled` file, so the node reads the hwmon alarm |
+| Memory and disk | 102 of 426 MB used; 2100 of 3121 MB of `/` used, 856 MB free |
+| Wi-Fi and time | wlan0 -67 to -69 dBm; NTP synchronized |
+| Packages | python3-aiohttp 3.11.16 and python3-websockets 15.0.1 available from apt; python3-libgpiod 2.2.1, polkitd 126, curl 8.14 already installed |
+
+| Item | Result |
+|---|---|
+| Installer on the Pi | pending |
+| TV paired through the Pi | pending |
+| Home redirect from the Pi (20 trials) | pending |
+| Phone paired and controlling the node | pending |
+| Mac asleep and phone away | pending |
+| Pi restart, router restart, TV cold boot | pending |
+| LED brightness, heat test, thermal guard | pending |
+| Multi-day run | pending |
+| Backup and restore | pending |
+| Memory, CPU, disk, temperature after install | pending |
+
+### Capability values the node reports
+
+`GET /v1/info` returns these. The app uses them to hide or explain controls.
+
+| Capability | Value now | Meaning |
+|---|---|---|
+| launch, pause, tv_pair, diagnostics, device_controls | supported | The node does this. |
+| leds | supported or unavailable | Supported when the LED service is running. Unavailable without the pHAT BEAT or with `--no-leds`. |
+| timer | unavailable | V/TV Sleep stays the only timer. The node has no confirmed way to set it. Use the TV's own controls or V/TV Sleep. |
+| catalog_sync | unavailable | App builds and the TV app list refresh stay on the Mac (`scripts/refresh-tv.sh`). |
+| power_on_launch | disabled | Opening V/HOME at TV power-on is off by default. `unverified` would mean it is switched on but not proven on this TV. |
+
+Unavailable means the node cannot do it and does not try. Disabled means it could be switched on but is off. Unverified means it is on but has not been shown to work on the real TV.

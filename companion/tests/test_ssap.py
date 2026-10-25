@@ -155,6 +155,13 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ssap.NotPaired):
             await make_client(FakeWS(), pin=None, trust_new=True).open(pair_timeout=0.05)
 
+    async def test_stored_key_without_answer_is_link_loss_not_revocation(self):
+        # A waking TV that never answers register must not stop the watcher for good.
+        c = make_client(FakeWS())
+        c.client_key = KEY
+        with self.assertRaises(ssap.ConnectionLost):
+            await c.open(pair_timeout=0.05)
+
     async def test_connect_errors_are_mapped(self):
         def failing(exc):
             async def connect(host, ctx):
