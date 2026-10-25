@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from vhome_companion.vnode.health import build_health  # noqa: E402
+from vhome_companion.vnode.health import HealthHistory, build_health  # noqa: E402
 
 SNAP = {
     "age_s": 0.4, "temp_c": 45.1, "throttled": 0, "volts": 1.35, "load": (0.04, 0.08, 0.08), "cpu_use": 3.0,
@@ -55,7 +55,7 @@ class HealthyTest(unittest.TestCase):
             ("network", "wifi_link"), ("network", "wifi_signal"), ("network", "wifi_errors"), ("network", "bluetooth")])
         self.assertEqual((h["level"], h["problems"], h["age_s"]), ("ok", 0, 0.4))
         for i in h["items"]:
-            self.assertEqual(set(i), {"group", "key", "label", "value", "level", "detail"})
+            self.assertEqual(set(i) - {"metric", "counts"}, {"group", "key", "label", "value", "level", "detail"})
             self.assertEqual(i["detail"], "")
             self.assertIn(i["level"], ("ok", "info"))
         self.assertEqual(item(h, "service")["value"], "0.1.0-abc · up 1 h 2 min")
@@ -207,6 +207,118 @@ class RollupTest(unittest.TestCase):
             self.assertEqual((by[key]["value"], by[key]["level"]), ("unavailable", "info"), key)
         self.assertEqual((by["power"]["value"], by["foreground"]["value"]), ("not reported by this TV", "unavailable"))
 
+
+
+METRIC_KEYS = {"temp", "cpu_load", "cpu_use", "cpu_freq", "memory", "swap", "disk", "voltage", "wifi_signal"}
+
+
+class MetricTest(unittest.TestCase):
+    def metric(self, key, **kw):
+        return item(health(**kw), key).get("metric")
+
+    def test_only_the_listed_items_carry_a_metric(self):
+        h = health()
+        self.assertEqual({i["key"] for i in h["items"] if "metric" in i}, METRIC_KEYS)
+        json.dumps(h)
+
+    def test_temp(self):
+        self.assertEqual(self.metric("temp"), {"value": 45.1, "min": 0, "max": 85, "unit": "°C", "warn": 65.0,
+                                               "error": 75.0, "higher_is_worse": True})
+        self.assertEqual(level("temp", temp_c=65.0), "warn")
+        self.assertEqual(self.metric("temp", temp_c=80.0)["value"], 80.0)
+
+    def test_cpu_load_uses_the_one_minute_value(self):
+        self.assertEqual(self.metric("cpu_load", load=(2.0, 1.0, 0.5)),
+                         {"value": 2.0, "min": 0, "max": 4, "unit": "", "warn": 1.5, "error": 3.0, "higher_is_worse": True})
+
+    def test_cpu_use_and_measuring(self):
+        self.assertEqual(self.metric("cpu_use"), {"value": 3.0, "min": 0, "max": 100, "unit": "%", "higher_is_worse": True})
+        self.assertNotIn("metric", item(health(cpu_use="measuring"), "cpu_use"))
+
+    def test_cpu_freq_is_info_with_max(self):
+        m = self.metric("cpu_freq", cpu_mhz=600, cpu_max_mhz=1000)
+        self.assertEqual((m["value"], m["min"], m["max"], m["unit"]), (600, 0, 1000, "MHz"))
+        self.assertNotIn("warn", m)
+        self.assertNotIn("metric", item(health(cpu_max_mhz=None), "cpu_freq"))
+
+    def test_memory_thresholds_are_total_minus_60_and_30(self):
+        m = self.metric("memory")   # total 436000 kB = 426 MB, available 372000 kB
+        self.assertEqual((m["value"], m["min"], m["max"], m["unit"], m["warn"], m["error"]), (62, 0, 426, "MB", 366, 396))
+        self.assertTrue(m["higher_is_worse"])
+
+    def test_swap_used(self):
+        m = self.metric("swap", swap_free_kb=102400 - 30720)
+        self.assertEqual((m["value"], m["max"], m["warn"]), (30, 100, 50))
+        self.assertNotIn("metric", item(health(swap_total_kb=0, swap_free_kb=0), "swap"))
+
+    def test_disk_used_with_thresholds(self):
+        m = self.metric("disk", disk_free_mb=1000, disk_total_mb=4000)
+        self.assertEqual((m["value"], m["max"], m["warn"], m["error"], m["unit"]), (3000, 4000, 3700, 3850, "MB"))
+
+    def test_voltage_is_info_range(self):
+        self.assertEqual(self.metric("voltage"), {"value": 1.35, "min": 0.8, "max": 1.4, "unit": "V", "higher_is_worse": True})
+        self.assertIn("metric", item(health(throttled=1), "voltage"))   # still present on under-voltage (error)
+
+    def test_wifi_signal_lower_is_worse_with_bars(self):
+        self.assertEqual(self.metric("wifi_signal"), {"value": -60, "min": -95, "max": -30, "unit": "dBm", "warn": -75,
+                                                      "error": -85, "higher_is_worse": False, "bars": 3})
+        self.assertEqual(self.metric("wifi_signal", wifi={"state": "up", "dbm": -80, "bars": 1})["bars"], 1)
+        self.assertNotIn("bars", self.metric("wifi_signal", wifi={"state": "up", "dbm": -80, "bars": None}))
+
+    def test_redirects_counts(self):
+        h = health(status={"watcher": {"ok": 5, "failed": 2}})
+        self.assertEqual(item(h, "redirects")["counts"], {"ok": 5, "failed": 2})
+        self.assertEqual(item(health(), "redirects")["counts"], {"ok": 12, "failed": 0})
+        self.assertNotIn("metric", item(h, "redirects"))
+
+    def test_no_metric_or_counts_when_the_reading_is_unavailable(self):
+        h = build_health({}, {"tv": {}, "watcher": {}}, {}, None, None, 0.0)
+        for i in h["items"]:
+            self.assertNotIn("metric", i)
+            self.assertNotIn("counts", i)
+        for key in METRIC_KEYS | {"redirects"}:
+            self.assertEqual((item(h, key)["value"], item(h, key)["level"]), ("unavailable", "info"))
+
+
+class HistoryTest(unittest.TestCase):
+    def snap(self, i):
+        return {"temp_c": 40.0 + i, "cpu_use": float(i), "load": (i / 10.0, 0, 0), "mem_total_kb": 1024 * 400,
+                "mem_avail_kb": 1024 * (400 - i), "wifi": {"dbm": -50 - i}}
+
+    def test_empty_at_start(self):
+        h = health()
+        self.assertEqual(h["history"], {"interval_s": 30, "temp": [], "cpu_use": [], "load": [], "mem_used_mb": [], "wifi_dbm": []})
+        self.assertEqual(HealthHistory().as_dict(), h["history"])
+
+    def test_oldest_first_and_values(self):
+        hh = HealthHistory()
+        for i in range(3):
+            hh.add(self.snap(i))
+        d = hh.as_dict()
+        self.assertEqual(d["temp"], [40.0, 41.0, 42.0])
+        self.assertEqual(d["load"], [0.0, 0.1, 0.2])
+        self.assertEqual(d["mem_used_mb"], [0, 1, 2])
+        self.assertEqual(d["wifi_dbm"], [-50, -51, -52])
+        self.assertEqual(build_health(SNAP, STATUS, NODE, 1, True, 0.0, history=d)["history"], d)
+
+    def test_capped_at_120(self):
+        hh = HealthHistory()
+        for i in range(150):
+            hh.add(self.snap(i))
+        d = hh.as_dict()
+        self.assertTrue(all(len(d[k]) == 120 for k in ("temp", "cpu_use", "load", "mem_used_mb", "wifi_dbm")))
+        self.assertEqual((d["temp"][0], d["temp"][-1]), (70.0, 189.0))
+        over = build_health(SNAP, STATUS, NODE, 1, True, 0.0, history={"temp": list(range(500))})["history"]
+        self.assertEqual((len(over["temp"]), over["temp"][0]), (120, 380))
+
+    def test_missing_readings_are_null(self):
+        hh = HealthHistory()
+        hh.add({"cpu_use": "measuring"})
+        hh.add(None)
+        d = hh.as_dict()
+        for k in ("temp", "cpu_use", "load", "mem_used_mb", "wifi_dbm"):
+            self.assertEqual(d[k], [None, None], k)
+        json.dumps(d)
 
 
 class HwmonFallbackTest(unittest.TestCase):

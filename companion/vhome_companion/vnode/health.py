@@ -2,6 +2,8 @@
 
 Pure: no I/O. The node decides every level so the phone and the Pi never disagree.
 """
+from collections import deque
+
 from . import contracts
 
 OK, WARN, ERROR, INFO = "ok", "warn", "error", "info"
@@ -15,6 +17,10 @@ SWAP_WARN_MB = 50
 DISK_WARN_MB, DISK_ERROR_MB = 300, 150
 WIFI_WARN_DBM, WIFI_ERROR_DBM = -75, -85
 WIFI_ERRORS_WARN = 100
+
+HISTORY_INTERVAL_S = 30
+HISTORY_MAX = 120
+_HISTORY_KEYS = ("temp", "cpu_use", "load", "mem_used_mb", "wifi_dbm")
 
 _THROTTLE_NOW = ((0, "under-voltage", ERROR), (1, "ARM frequency capped", WARN),
                  (2, "throttled", ERROR), (3, "soft temperature limit", WARN))
@@ -63,16 +69,62 @@ class _Items:
     def __init__(self):
         self.items = []
 
-    def add(self, group, key, label, value, level=INFO, detail=""):
-        self.items.append({"group": group, "key": key, "label": label, "value": contracts.redact(value),
-                           "level": level, "detail": contracts.redact(detail) if level in (WARN, ERROR) else ""})
+    def add(self, group, key, label, value, level=INFO, detail="", metric=None, **extra):
+        item = {"group": group, "key": key, "label": label, "value": contracts.redact(value),
+                "level": level, "detail": contracts.redact(detail) if level in (WARN, ERROR) else ""}
+        if metric is not None:
+            item["metric"] = metric
+        item.update(extra)
+        self.items.append(item)
 
     def unavailable(self, group, key, label):
         self.add(group, key, label, UNAVAILABLE, INFO)
 
 
-def build_health(device_snapshot, status, node_info, phones_count, ntp_ok, now):
-    """-> {"level", "problems", "age_s", "items"}. `now` is accepted for call-site symmetry; every age is
+def _metric(value, lo, hi, unit, warn=None, error=None, higher_is_worse=True, nd=1):
+    """The optional gauge for an item (contract: "Visual fields"). warn/error are left out for info metrics."""
+    m = {"value": round(value, nd) if nd else int(round(value)), "min": lo, "max": hi, "unit": unit}
+    if warn is not None:
+        m["warn"] = warn
+    if error is not None:
+        m["error"] = error
+    m["higher_is_worse"] = higher_is_worse
+    return m
+
+
+class HealthHistory:
+    """Last hour of samples, in memory only: one per HISTORY_INTERVAL_S, at most HISTORY_MAX, oldest first."""
+
+    def __init__(self):
+        self._d = {k: deque(maxlen=HISTORY_MAX) for k in _HISTORY_KEYS}
+
+    @staticmethod
+    def _num(v):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v else None
+
+    def add(self, snap):
+        snap = snap or {}
+        load, total, avail = snap.get("load"), snap.get("mem_total_kb"), snap.get("mem_avail_kb")
+        mem = None if total is None or avail is None else round((total - avail) / 1024.0)
+        sample = {"temp": snap.get("temp_c"), "cpu_use": snap.get("cpu_use"),
+                  "load": load[0] if isinstance(load, (list, tuple)) and load else None,
+                  "mem_used_mb": mem, "wifi_dbm": (snap.get("wifi") or {}).get("dbm")}
+        for k, v in sample.items():
+            self._d[k].append(self._num(v))   # "measuring" and anything non-numeric become null
+
+    def as_dict(self):
+        return {"interval_s": HISTORY_INTERVAL_S, **{k: list(v) for k, v in self._d.items()}}
+
+
+def _history_out(history):
+    out = {"interval_s": HISTORY_INTERVAL_S}
+    for k in _HISTORY_KEYS:
+        out[k] = list((history or {}).get(k) or [])[-HISTORY_MAX:]
+    return out
+
+
+def build_health(device_snapshot, status, node_info, phones_count, ntp_ok, now, history=None):
+    """-> {"level", "problems", "age_s", "items", "history"}. `history` is HealthHistory.as_dict() (kept out of here so this stays pure). `now` is accepted for call-site symmetry; every age is
     already computed on the node (snapshot["age_s"], status ages), so it is not used."""
     snap = device_snapshot or {}
     tv = (status or {}).get("tv", {})
@@ -86,7 +138,8 @@ def build_health(device_snapshot, status, node_info, phones_count, ntp_ok, now):
     level = max((i["level"] for i in it.items), key=_RANK.get, default=OK)
     level = OK if level == INFO else level
     problems = sum(1 for i in it.items if i["level"] in (WARN, ERROR))
-    return {"level": level, "problems": problems, "age_s": snap.get("age_s", 0.0), "items": it.items}
+    return {"level": level, "problems": problems, "age_s": snap.get("age_s", 0.0), "items": it.items,
+            "history": _history_out(history)}
 
 
 def _node(it, snap, info, phones, ntp_ok):
@@ -155,11 +208,12 @@ def _watcher(it, w):
     else:
         ok, failed, lat = w.get("ok") or 0, w.get("failed") or 0, w.get("last_latency_s")
         value = "%d ok, %d failed" % (ok, failed) + (" · last %.1f s" % lat if isinstance(lat, (int, float)) else "")
+        counts = {"ok": ok, "failed": failed}
         if failed > 0:
             it.add(g, "redirects", "Redirects", value, WARN,
-                   "Some attempts to open V/HOME on the TV failed; check the TV link and the last failure.")
+                   "Some attempts to open V/HOME on the TV failed; check the TV link and the last failure.", counts=counts)
         else:
-            it.add(g, "redirects", "Redirects", value, OK)
+            it.add(g, "redirects", "Redirects", value, OK, counts=counts)
     if w.get("last_failure"):
         it.add(g, "last_failure", "Last failure", str(w["last_failure"])[:200], INFO)
 
@@ -167,14 +221,15 @@ def _watcher(it, w):
 def _pi(it, s):
     g = "pi"
     t = s.get("temp_c")
+    tm = None if t is None else _metric(t, 0, 85, "°C", TEMP_WARN_C, TEMP_ERROR_C)
     if t is None:
         it.unavailable(g, "temp", "Temperature")
     elif t >= TEMP_ERROR_C:
-        it.add(g, "temp", "Temperature", "%.1f °C" % t, ERROR, "The Pi is overheating; give it airflow or move it away from the TV's heat.")
+        it.add(g, "temp", "Temperature", "%.1f °C" % t, ERROR, "The Pi is overheating; give it airflow or move it away from the TV's heat.", metric=tm)
     elif t >= TEMP_WARN_C:
-        it.add(g, "temp", "Temperature", "%.1f °C" % t, WARN, "The Pi is getting hot; give it airflow.")
+        it.add(g, "temp", "Temperature", "%.1f °C" % t, WARN, "The Pi is getting hot; give it airflow.", metric=tm)
     else:
-        it.add(g, "temp", "Temperature", "%.1f °C" % t, OK)
+        it.add(g, "temp", "Temperature", "%.1f °C" % t, OK, metric=tm)
 
     th = s.get("throttled")
     if th is None:
@@ -208,21 +263,23 @@ def _pi(it, s):
     if v is None:
         it.unavailable(g, "voltage", "Core voltage")
     elif th is not None and th & 1:
-        it.add(g, "voltage", "Core voltage", "%.2f V" % v, ERROR, "The power supply is too weak; use a 5 V 2.5 A supply.")
+        it.add(g, "voltage", "Core voltage", "%.2f V" % v, ERROR, "The power supply is too weak; use a 5 V 2.5 A supply.",
+               metric=_metric(v, 0.8, 1.4, "V", nd=2))
     else:
-        it.add(g, "voltage", "Core voltage", "%.2f V" % v, INFO)
+        it.add(g, "voltage", "Core voltage", "%.2f V" % v, INFO, metric=_metric(v, 0.8, 1.4, "V", nd=2))
 
     ld = s.get("load")
     if ld is None:
         it.unavailable(g, "cpu_load", "CPU load")
     else:
         value = " / ".join("%.2f" % x for x in ld)
+        lm = _metric(ld[0], 0, 4, "", LOAD_WARN, LOAD_ERROR, nd=2)
         if ld[0] > LOAD_ERROR:
-            it.add(g, "cpu_load", "CPU load", value, ERROR, "The Pi is overloaded; restart the service from the app.")
+            it.add(g, "cpu_load", "CPU load", value, ERROR, "The Pi is overloaded; restart the service from the app.", metric=lm)
         elif ld[0] > LOAD_WARN:
-            it.add(g, "cpu_load", "CPU load", value, WARN, "The Pi is busy; if it stays like this, restart the service.")
+            it.add(g, "cpu_load", "CPU load", value, WARN, "The Pi is busy; if it stays like this, restart the service.", metric=lm)
         else:
-            it.add(g, "cpu_load", "CPU load", value, OK)
+            it.add(g, "cpu_load", "CPU load", value, OK, metric=lm)
 
     cu = s.get("cpu_use")
     if cu == "measuring":
@@ -230,7 +287,7 @@ def _pi(it, s):
     elif cu is None:
         it.unavailable(g, "cpu_use", "CPU use")
     else:
-        it.add(g, "cpu_use", "CPU use", "%.0f %%" % cu, INFO)
+        it.add(g, "cpu_use", "CPU use", "%.0f %%" % cu, INFO, metric=_metric(cu, 0, 100, "%"))
 
     mhz, top = s.get("cpu_mhz"), s.get("cpu_max_mhz")
     if mhz is None:
@@ -239,19 +296,21 @@ def _pi(it, s):
         value = "%d / %d MHz" % (mhz, top) if top else "%d MHz" % mhz
         if s.get("governor"):
             value += " · " + s["governor"]
-        it.add(g, "cpu_freq", "CPU speed", value, INFO)
+        it.add(g, "cpu_freq", "CPU speed", value, INFO, metric=_metric(mhz, 0, top, "MHz", nd=0) if top else None)
 
     total, avail = s.get("mem_total_kb"), s.get("mem_avail_kb")
     if total is None or avail is None:
         it.unavailable(g, "memory", "Memory")
     else:
         value = "%s / %s MB" % (_fmt_mb(_mb(total - avail)), _fmt_mb(_mb(total)))
+        tmb = round(_mb(total))
+        mm = _metric(_mb(total - avail), 0, tmb, "MB", tmb - MEM_WARN_MB, tmb - MEM_ERROR_MB, nd=0) if tmb > 0 else None
         if _mb(avail) < MEM_ERROR_MB:
-            it.add(g, "memory", "Memory", value, ERROR, "The Pi is almost out of memory; restart the service from the app.")
+            it.add(g, "memory", "Memory", value, ERROR, "The Pi is almost out of memory; restart the service from the app.", metric=mm)
         elif _mb(avail) < MEM_WARN_MB:
-            it.add(g, "memory", "Memory", value, WARN, "Memory is running low; restart the service if the app gets slow.")
+            it.add(g, "memory", "Memory", value, WARN, "Memory is running low; restart the service if the app gets slow.", metric=mm)
         else:
-            it.add(g, "memory", "Memory", value, OK)
+            it.add(g, "memory", "Memory", value, OK, metric=mm)
 
     st, sf = s.get("swap_total_kb"), s.get("swap_free_kb")
     if st is None or sf is None:
@@ -259,22 +318,24 @@ def _pi(it, s):
     else:
         used = _mb(st - sf)
         value = "%s / %s MB" % (_fmt_mb(used), _fmt_mb(_mb(st)))
+        sm = _metric(used, 0, round(_mb(st)), "MB", SWAP_WARN_MB, nd=0) if round(_mb(st)) > 0 else None
         if used > SWAP_WARN_MB:
-            it.add(g, "swap", "Swap", value, WARN, "The Pi is using the SD card as memory, which is slow and wears it; restart the service.")
+            it.add(g, "swap", "Swap", value, WARN, "The Pi is using the SD card as memory, which is slow and wears it; restart the service.", metric=sm)
         else:
-            it.add(g, "swap", "Swap", value, OK)
+            it.add(g, "swap", "Swap", value, OK, metric=sm)
 
     free, dtotal = s.get("disk_free_mb"), s.get("disk_total_mb")
     if free is None or dtotal is None:
         it.unavailable(g, "disk", "Storage")
     else:
         value = "%d MB free of %d MB" % (free, dtotal)
+        dm = _metric(dtotal - free, 0, dtotal, "MB", dtotal - DISK_WARN_MB, dtotal - DISK_ERROR_MB, nd=0) if dtotal > 0 else None
         if free < DISK_ERROR_MB:
-            it.add(g, "disk", "Storage", value, ERROR, "The SD card is almost full; free space or reinstall the node.")
+            it.add(g, "disk", "Storage", value, ERROR, "The SD card is almost full; free space or reinstall the node.", metric=dm)
         elif free < DISK_WARN_MB:
-            it.add(g, "disk", "Storage", value, WARN, "The SD card is getting full; free some space.")
+            it.add(g, "disk", "Storage", value, WARN, "The SD card is getting full; free some space.", metric=dm)
         else:
-            it.add(g, "disk", "Storage", value, OK)
+            it.add(g, "disk", "Storage", value, OK, metric=dm)
 
     up = s.get("uptime_s")
     if up is None:
@@ -299,13 +360,17 @@ def _network(it, s):
     if dbm is None:
         it.unavailable(g, "wifi_signal", "Wi-Fi signal")
     else:
-        value = "%d dBm · %s/4 bars" % (dbm, w.get("bars") if w.get("bars") is not None else "?")
+        bars = w.get("bars")
+        value = "%d dBm · %s/4 bars" % (dbm, bars if bars is not None else "?")
+        wm = _metric(dbm, -95, -30, "dBm", WIFI_WARN_DBM, WIFI_ERROR_DBM, higher_is_worse=False, nd=0)
+        if isinstance(bars, int) and not isinstance(bars, bool):
+            wm["bars"] = max(0, min(4, bars))
         if dbm < WIFI_ERROR_DBM:
-            it.add(g, "wifi_signal", "Wi-Fi signal", value, ERROR, "The Wi-Fi signal is very weak; move the node or the router closer.")
+            it.add(g, "wifi_signal", "Wi-Fi signal", value, ERROR, "The Wi-Fi signal is very weak; move the node or the router closer.", metric=wm)
         elif dbm < WIFI_WARN_DBM:
-            it.add(g, "wifi_signal", "Wi-Fi signal", value, WARN, "The Wi-Fi signal is weak; move the node or the router closer.")
+            it.add(g, "wifi_signal", "Wi-Fi signal", value, WARN, "The Wi-Fi signal is weak; move the node or the router closer.", metric=wm)
         else:
-            it.add(g, "wifi_signal", "Wi-Fi signal", value, OK)
+            it.add(g, "wifi_signal", "Wi-Fi signal", value, OK, metric=wm)
     errs = w.get("errors")
     if errs is None:
         it.unavailable(g, "wifi_errors", "Wi-Fi errors")

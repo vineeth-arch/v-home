@@ -315,7 +315,7 @@ class HealthRouteTest(Base):
         r = await self.client.get("/v1/health", headers=self.auth)
         d = await r.json()
         self.assertEqual(r.status, 200)
-        self.assertEqual(set(d), {"level", "problems", "age_s", "items"})
+        self.assertEqual(set(d), {"level", "problems", "age_s", "items", "history"})
         keys = [(i["group"], i["key"]) for i in d["items"]]
         self.assertEqual(keys[:5], [("node", "service"), ("node", "restarts"), ("node", "clock"),
                                     ("node", "leds_service"), ("node", "phones")])
@@ -336,6 +336,85 @@ class HealthRouteTest(Base):
         n = len(self.probes)
         await self.client.get("/v1/health", headers=self.auth)
         self.assertEqual(len(self.probes), n)
+
+    async def test_metrics_and_history_in_json_under_16_kb(self):
+        from vhome_companion.vnode.health import HealthHistory
+        hist = HealthHistory()
+        for i in range(150):
+            hist.add({"temp_c": 45.1 + i / 100, "cpu_use": 12.5, "load": (0.25, 0.2, 0.1), "mem_total_kb": 436000,
+                      "mem_avail_kb": 372000, "wifi": {"dbm": -60}})
+        app = api.build_app(self.tv, self.phones, self.codes, self.nonces, self.device, INFO, history=hist)
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            r = await client.get("/v1/health", headers=self.auth)
+            raw = await r.read()
+        finally:
+            await client.close()
+        self.assertLess(len(raw), 16 * 1024)
+        d = json.loads(raw)
+        self.assertEqual(set(d), {"level", "problems", "age_s", "items", "history"})
+        self.assertEqual(len(d["history"]["temp"]), 120)
+        self.assertEqual(d["history"]["interval_s"], 30)
+
+    async def test_history_empty_and_metrics_absent_on_the_bare_fake_pi(self):
+        d = await (await self.client.get("/v1/health", headers=self.auth)).json()
+        self.assertEqual(d["history"]["temp"], [])
+        by = {i["key"]: i for i in d["items"]}
+        self.assertNotIn("metric", by["temp"])   # unreadable: stays info "unavailable"
+        self.assertEqual(by["temp"]["value"], "unavailable")
+
+
+class SampleHealthTest(unittest.IsolatedAsyncioTestCase):
+    async def test_appends_on_a_fake_clock_and_stops_on_cancel(self):
+        from vhome_companion.vnode.health import HealthHistory
+        hist, sleeps, calls = HealthHistory(), [], []
+        gate = asyncio.Event()
+
+        class Dev:
+            async def health_snapshot(self):
+                calls.append(1)
+                return {"temp_c": 40.0 + len(calls), "wifi": {"dbm": -60}}
+
+        async def fake_sleep(s):
+            sleeps.append(s)
+            if len(sleeps) >= 3:
+                gate.set()
+                await asyncio.Event().wait()   # park until cancelled
+
+        task = asyncio.create_task(api.sample_health(Dev(), hist, sleep=fake_sleep))
+        await asyncio.wait_for(gate.wait(), 2)
+        self.assertEqual(sleeps, [30, 30, 30])
+        self.assertEqual(hist.as_dict()["temp"], [41.0, 42.0, 43.0])
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(len(calls), 3)
+
+    async def test_a_failing_snapshot_never_ends_the_loop_and_logs_once(self):
+        from vhome_companion.vnode.health import HealthHistory
+        hist, n = HealthHistory(), []
+        done = asyncio.Event()
+
+        class Dev:
+            async def health_snapshot(self):
+                n.append(1)
+                if len(n) < 4:
+                    raise RuntimeError("boom")
+                return {"temp_c": 50.0}
+
+        async def fake_sleep(s):
+            if len(n) >= 4:
+                done.set()
+                await asyncio.Event().wait()
+
+        with self.assertLogs("vhome.api", level="WARNING") as logs:
+            task = asyncio.create_task(api.sample_health(Dev(), hist, sleep=fake_sleep))
+            await asyncio.wait_for(done.wait(), 2)
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(hist.as_dict()["temp"], [50.0])
 
 
 class AdminTest(Base):

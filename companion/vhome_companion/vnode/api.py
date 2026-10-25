@@ -18,7 +18,7 @@ from aiohttp import web
 from .. import __version__
 from . import contracts
 from .device import Device, RateLimited
-from .health import build_health
+from .health import HISTORY_INTERVAL_S, HealthHistory, build_health
 from .phones import Nonces, PairingCodes, PhoneRegistry
 
 log = logging.getLogger("vhome.api")
@@ -163,9 +163,10 @@ def _timeout_for(path):
 # ---- application -------------------------------------------------------------------------
 
 class _Api:
-    def __init__(self, controller, phones, codes, nonces, device, info, admin):
+    def __init__(self, controller, phones, codes, nonces, device, info, admin, history=None):
         self.tv, self.phones, self.codes, self.nonces = controller, phones, codes, nonces
         self.device, self.info, self.admin = device, info, admin
+        self.history = history if history is not None else HealthHistory()
         self.started = time.monotonic()
         self.launch_lock, self.pair_lock = asyncio.Lock(), asyncio.Lock()
 
@@ -252,7 +253,8 @@ class _Api:
         snap = await self.device.health_snapshot()
         node = {"version": self.info.get("version"), "uptime_s": int(time.monotonic() - self.started)}
         ntp = (diag.get("checks") or {}).get("ntp_synced")
-        return build_health(snap, self.tv.status(), node, len(self.phones.list()), ntp, time.monotonic())
+        return build_health(snap, self.tv.status(), node, len(self.phones.list()), ntp, time.monotonic(),
+                            self.history.as_dict())
 
     async def get_health(self, request):
         return web.json_response(_scrub(await self._health()))
@@ -355,8 +357,8 @@ def _scrub(obj):
     return obj
 
 
-def build_app(controller, phones, codes, nonces, device, info, *, admin=False):
-    api = _Api(controller, phones, codes, nonces, device, info, admin)
+def build_app(controller, phones, codes, nonces, device, info, *, admin=False, history=None):
+    api = _Api(controller, phones, codes, nonces, device, info, admin, history)
     app = web.Application(client_max_size=contracts.MAX_BODY,
                           middlewares=[error_middleware, version_middleware, api.auth, api.timeout])
     f = _fields
@@ -415,6 +417,22 @@ def _version():
     return v
 
 
+async def sample_health(device, history, sleep=asyncio.sleep, interval=HISTORY_INTERVAL_S):
+    """Appends one sample every `interval` s until cancelled. Never raises (a failed sample is logged once)."""
+    failed = False
+    while True:
+        try:
+            history.add(await device.health_snapshot())
+            failed = False
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - history is a nicety; it must never take the service down
+            if not failed:
+                log.warning("health history sample failed (%s: %s); retrying every %d s", type(e).__name__, e, interval)
+            failed = True
+        await sleep(interval)
+
+
 async def serve(state_dir, cert, key, port=contracts.PORT, runtime_dir=None):
     """Runs until SIGTERM/SIGINT. Returns the process exit code (0 clean, 78 when another instance holds the lock)."""
     from .tvcontrol import TvController  # built in parallel; imported late so api tests don't need it
@@ -436,14 +454,17 @@ async def serve(state_dir, cert, key, port=contracts.PORT, runtime_dir=None):
                                                    leds=os.path.exists(contracts.LED_STATE_FILE))}
     phones, codes, nonces = PhoneRegistry(state_dir), PairingCodes(), Nonces()
     device = Device(state_dir)
-    runner = web.AppRunner(build_app(controller, phones, codes, nonces, device, info), access_log=None)  # polling would flood the SD card
-    admin_runner = web.AppRunner(build_app(controller, phones, codes, nonces, device, info, admin=True), access_log=None)
+    history = HealthHistory()
+    runner = web.AppRunner(build_app(controller, phones, codes, nonces, device, info, history=history), access_log=None)  # polling would flood the SD card
+    admin_runner = web.AppRunner(build_app(controller, phones, codes, nonces, device, info, admin=True, history=history), access_log=None)
     stop = asyncio.Event()
+    sampler = None
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     try:
         await controller.start()
+        sampler = asyncio.create_task(sample_health(device, history), name="health-history")
         await runner.setup()
         await admin_runner.setup()
         await web.TCPSite(runner, host=None, port=port, ssl_context=ssl_ctx).start()
@@ -464,6 +485,9 @@ async def serve(state_dir, cert, key, port=contracts.PORT, runtime_dir=None):
         await stop.wait()
     finally:
         log.info("shutting down")
+        if sampler is not None:
+            sampler.cancel()
+            await asyncio.gather(sampler, return_exceptions=True)
         try:
             async with asyncio.timeout(10):
                 await runner.cleanup()
