@@ -154,7 +154,7 @@ class InboxActivity : Activity() {
             if (!a.saved) notes += "Couldn't save draft"
             if (a.dropped > 0) notes += "${a.dropped} oldest draft(s) were dropped"
         }
-        setNotice(notes.joinToString(". "))
+        setNotice(notes.joinToString(". ").ifEmpty { null }) // empty string would show a blank amber bar
     }
 
     // ---- Data --------------------------------------------------------------------------------------
