@@ -1,0 +1,56 @@
+[Unit]
+Description=V/HOME node (TV controller and local HTTPS API)
+# Ordering only: the app starts without Wi-Fi and its loops back off until the network is there.
+After=network-online.target
+Wants=network-online.target
+# Start limits: systemd defaults (5 starts per 10 s) are kept on purpose. With RestartSec=5 growing to
+# 120 s the unit can never restart fast enough to hit them, so it keeps retrying forever, slowly,
+# instead of ending in "failed" after a long Wi-Fi outage. Exit 78 (config error) is never retried.
+
+[Service]
+Type=simple
+User=vhome
+Group=vhome
+Environment=PYTHONPATH=/opt/vhome-vnode/current
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m vhome_companion.vnode serve
+# /var/lib/vhome-vnode (STATE_DIRECTORY) and /run/vhome-vnode (RUNTIME_DIRECTORY: admin.sock)
+StateDirectory=vhome-vnode
+StateDirectoryMode=0700
+RuntimeDirectory=vhome-vnode
+RuntimeDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=120
+RestartPreventExitStatus=78
+TimeoutStopSec=10
+KillSignal=SIGTERM
+MemoryMax=120M
+Nice=5
+UMask=0077
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+
+# Hardening. Still allowed: reading /run/vhome-leds/state.json, /proc/net/wireless and /sys/class/thermal
+# (ProtectSystem=strict only makes the tree read-only; /proc and /sys stay readable), and talking to the
+# system D-Bus (AF_UNIX) for "systemctl reboot|poweroff|restart" under the polkit rule. NoNewPrivileges
+# does not block that: polkit authorises by user, no setuid helper is involved.
+# PrivateDevices hides /dev/gpiochip0, which this service does not need (vhome-leds does).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

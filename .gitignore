@@ -16,3 +16,4 @@ tv-catalog.*
 companion/.venv/
 __pycache__/
 *.tsbuildinfo
+dist-vnode/

@@ -1,0 +1,54 @@
+[Unit]
+Description=V/HOME node Wi-Fi signal LEDs (pHAT BEAT)
+# Deliberately independent: no Requires/BindsTo/PartOf either way. It can be stopped, restarted or fail
+# without touching vhome-vnode.service, and the other way round.
+After=local-fs.target
+
+[Service]
+Type=simple
+User=vhome
+Group=vhome
+# gpio group owns /dev/gpiochip0
+SupplementaryGroups=gpio
+Environment=PYTHONPATH=/opt/vhome-vnode/current
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Config (leds.json) is read from here; vhome-vnode owns and writes it, this service only reads
+Environment=STATE_DIRECTORY=/var/lib/vhome-vnode
+ExecStart=/usr/bin/python3 -m vhome_companion.vnode.leds
+# /run/vhome-leds/state.json, mode 0644 file, holds no secrets
+RuntimeDirectory=vhome-leds
+RuntimeDirectoryMode=0755
+Restart=on-failure
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=120
+# 78 = no gpiod / no board: do not restart-loop
+RestartPreventExitStatus=78
+TimeoutStopSec=10
+KillSignal=SIGTERM
+MemoryMax=40M
+Nice=10
+
+# DevicePolicy=closed denies all device nodes except the standard pseudo devices (null, zero, random...)
+# and the ones listed in DeviceAllow, so the gpiochip char device is allowed explicitly. PrivateDevices is
+# NOT used: its private /dev has no gpiochip0.
+DevicePolicy=closed
+DeviceAllow=/dev/gpiochip0 rw
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=multi-user.target

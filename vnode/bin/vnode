@@ -1,0 +1,3 @@
+#!/bin/sh
+# Run the VNode CLI as the service user, with the service's state and runtime directories.
+exec sudo -u vhome env PYTHONPATH=/opt/vhome-vnode/current STATE_DIRECTORY=/var/lib/vhome-vnode RUNTIME_DIRECTORY=/run/vhome-vnode /usr/bin/python3 -m vhome_companion.vnode "$@"

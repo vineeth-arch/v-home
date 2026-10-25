@@ -1,0 +1,26 @@
+// V/HOME node: lets the service user "vhome" reboot or power off the Pi and restart its own two units.
+// Nothing else is granted; everything else falls through to the default policy.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "vhome") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var power = [
+        "org.freedesktop.login1.reboot",
+        "org.freedesktop.login1.reboot-multiple-sessions",
+        "org.freedesktop.login1.reboot-ignore-inhibit",
+        "org.freedesktop.login1.power-off",
+        "org.freedesktop.login1.power-off-multiple-sessions",
+        "org.freedesktop.login1.power-off-ignore-inhibit"
+    ];
+    if (power.indexOf(action.id) >= 0) {
+        return polkit.Result.YES;
+    }
+    if (action.id === "org.freedesktop.systemd1.manage-units") {
+        var unit = action.lookup("unit");
+        if ((unit === "vhome-vnode.service" || unit === "vhome-leds.service") &&
+            action.lookup("verb") === "restart") {
+            return polkit.Result.YES;
+        }
+    }
+    return polkit.Result.NOT_HANDLED;
+});
