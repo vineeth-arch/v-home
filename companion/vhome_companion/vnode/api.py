@@ -16,6 +16,7 @@ from pathlib import Path
 from aiohttp import web
 
 from .. import __version__
+from ..integrations import contracts as int_contracts
 from . import contracts
 from .device import Device, RateLimited
 from .health import HISTORY_INTERVAL_S, HealthHistory, build_health
@@ -27,6 +28,7 @@ DIAG_MAX = 64 * 1024
 _NO_AUTH = ("/v1/info", "/v1/pair")
 _SENSITIVE_KEYS = {"client-key", "client_key", "clientkey", "token", "authorization", "nonce", "password", "secret"}
 _LOCAL_NAME = re.compile(r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.local$")
+_INT_PREFIXES = (int_contracts.PHONE_PREFIX, int_contracts.WORKER_PREFIX)
 _STATUS_CODES = {400: "bad_request", 404: "not_found", 405: "method_not_allowed", 413: "too_large"}
 
 
@@ -128,8 +130,10 @@ async def error_middleware(request, handler):
     status = 500
     try:
         declared = request.content_length
-        if declared is not None and declared > contracts.MAX_BODY:
-            raise ApiError(413, "too_large", "body over %d bytes" % contracts.MAX_BODY)
+        cap = (int_contracts.PROXY_WORKER_MAX_BODY if request.path.startswith(int_contracts.WORKER_PREFIX)
+               else int_contracts.PROXY_MAX_BODY if request.path.startswith(_INT_PREFIXES) else contracts.MAX_BODY)
+        if declared is not None and declared > cap:
+            raise ApiError(413, "too_large", "body over %d bytes" % cap)
         resp = await handler(request)
         status = resp.status
         return resp
@@ -145,7 +149,8 @@ async def error_middleware(request, handler):
         log.exception("unhandled error on %s %s", request.method, request.path)
         return web.json_response({"error": "internal", "detail": "internal error"}, status=500)
     finally:
-        log.debug("%s %s -> %s", request.method, request.path, status)
+        shown = next((p + "…" for p in _INT_PREFIXES if request.path.startswith(p)), request.path)  # keys ride in the path
+        log.debug("%s %s -> %s", request.method, shown, status)
 
 
 @web.middleware
@@ -157,6 +162,8 @@ async def version_middleware(request, handler):
 
 
 def _timeout_for(path):
+    if path.startswith(_INT_PREFIXES):
+        return int_contracts.PROXY_ROUTE_TIMEOUT_S
     return 13 if path in ("/v1/tv/launch", "/v1/health") else 6 if path == "/v1/tv/discover" else 5
 
 
@@ -173,7 +180,7 @@ class _Api:
     # middleware that needs state
     @web.middleware
     async def auth(self, request, handler):
-        if not self.admin and request.path not in _NO_AUTH:
+        if not self.admin and request.path not in _NO_AUTH and not request.path.startswith(int_contracts.WORKER_PREFIX):
             header = request.headers.get("Authorization", "")
             scheme, _, token = header.partition(" ")
             phone = self.phones.check(token.strip()) if scheme.lower() == "bearer" and token.strip() else None
@@ -357,7 +364,7 @@ def _scrub(obj):
     return obj
 
 
-def build_app(controller, phones, codes, nonces, device, info, *, admin=False, history=None):
+def build_app(controller, phones, codes, nonces, device, info, *, admin=False, history=None, int_socket=None):
     api = _Api(controller, phones, codes, nonces, device, info, admin, history)
     app = web.Application(client_max_size=contracts.MAX_BODY,
                           middlewares=[error_middleware, version_middleware, api.auth, api.timeout])
@@ -383,6 +390,9 @@ def build_app(controller, phones, codes, nonces, device, info, *, admin=False, h
         web.post("/v1/device/reboot", api.command(f(confirm=_confirm("reboot")), api._power("reboot"))),
         web.post("/v1/device/shutdown", api.command(f(confirm=_confirm("shutdown")), api._power("shutdown"))),
     ])
+    if not admin:
+        from . import intproxy  # late: intproxy imports ApiError from this module
+        intproxy.register(app, api, int_socket or os.environ.get("VHOME_INT_SOCKET", int_contracts.SOCKET_PATH))
     if admin:
         app.add_routes([
             web.post("/admin/pairing-code", api.admin_code),
